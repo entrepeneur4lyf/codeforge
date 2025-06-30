@@ -220,6 +220,23 @@ func (cfs *CodeForgeServer) registerTools() {
 	)
 
 	cfs.server.AddTool(gitGenerateCommitMessageTool, cfs.handleGitGenerateCommitMessage)
+
+	// Git conflict detection tool
+	gitDetectConflictsTool := mcp.NewTool("git_detect_conflicts",
+		mcp.WithDescription("Detect merge conflicts in the repository"),
+	)
+
+	cfs.server.AddTool(gitDetectConflictsTool, cfs.handleGitDetectConflicts)
+
+	// Git conflict resolution tool
+	gitResolveConflictsTool := mcp.NewTool("git_resolve_conflicts",
+		mcp.WithDescription("Get AI-powered suggestions for resolving merge conflicts"),
+		mcp.WithBoolean("auto_apply",
+			mcp.Description("Automatically apply the suggested resolutions (default: false)"),
+		),
+	)
+
+	cfs.server.AddTool(gitResolveConflictsTool, cfs.handleGitResolveConflicts)
 }
 
 // registerResources registers all CodeForge resources

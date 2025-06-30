@@ -110,6 +110,121 @@ func (cfs *CodeForgeServer) handleGitGenerateCommitMessage(ctx context.Context, 
 	return mcp.NewToolResultText(string(resultJSON)), nil
 }
 
+// handleGitDetectConflicts handles git conflict detection requests
+func (cfs *CodeForgeServer) handleGitDetectConflicts(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Create git repository instance
+	repo := git.NewRepository(cfs.workspaceRoot)
+
+	// Check if git is available and this is a git repository
+	if !git.IsGitInstalled() {
+		return mcp.NewToolResultError("Git is not installed"), nil
+	}
+
+	if !repo.IsGitRepository() {
+		return mcp.NewToolResultError("Not a git repository"), nil
+	}
+
+	// Detect conflicts
+	conflicts, err := repo.DetectConflicts(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to detect conflicts: %v", err)), nil
+	}
+
+	// Format results
+	result := map[string]interface{}{
+		"conflicts_found": len(conflicts) > 0,
+		"conflict_count":  len(conflicts),
+		"conflicts":       conflicts,
+	}
+
+	if len(conflicts) == 0 {
+		result["message"] = "No merge conflicts detected"
+	} else {
+		result["message"] = fmt.Sprintf("Found %d file(s) with merge conflicts", len(conflicts))
+	}
+
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleGitResolveConflicts handles git conflict resolution requests
+func (cfs *CodeForgeServer) handleGitResolveConflicts(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	autoApply := false
+	if args, ok := request.Params.Arguments.(map[string]interface{}); ok {
+		if val, ok := args["auto_apply"].(bool); ok {
+			autoApply = val
+		}
+	}
+
+	// Create git repository instance
+	repo := git.NewRepository(cfs.workspaceRoot)
+
+	// Check if git is available and this is a git repository
+	if !git.IsGitInstalled() {
+		return mcp.NewToolResultError("Git is not installed"), nil
+	}
+
+	if !repo.IsGitRepository() {
+		return mcp.NewToolResultError("Not a git repository"), nil
+	}
+
+	// Detect conflicts first
+	conflicts, err := repo.DetectConflicts(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to detect conflicts: %v", err)), nil
+	}
+
+	if len(conflicts) == 0 {
+		result := map[string]interface{}{
+			"success": true,
+			"message": "No merge conflicts found to resolve",
+		}
+		resultJSON, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(resultJSON)), nil
+	}
+
+	// Create conflict resolver
+	resolver, err := git.NewConflictResolver()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to create conflict resolver: %v", err)), nil
+	}
+
+	// Get AI-powered resolutions
+	resolutions, err := resolver.ResolveConflicts(ctx, conflicts)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to resolve conflicts: %v", err)), nil
+	}
+
+	// Apply resolutions if requested
+	var appliedCount int
+	if autoApply {
+		for _, resolution := range resolutions {
+			if err := repo.ApplyResolution(ctx, resolution); err == nil {
+				appliedCount++
+			}
+		}
+	}
+
+	// Format results
+	result := map[string]interface{}{
+		"success":           true,
+		"conflicts_found":   len(conflicts),
+		"resolutions_count": len(resolutions),
+		"resolutions":       resolutions,
+		"auto_applied":      autoApply,
+		"applied_count":     appliedCount,
+	}
+
+	if autoApply {
+		result["message"] = fmt.Sprintf("Generated %d resolution(s), applied %d automatically", len(resolutions), appliedCount)
+	} else {
+		result["message"] = fmt.Sprintf("Generated %d AI-powered conflict resolution(s). Use auto_apply=true to apply automatically", len(resolutions))
+	}
+
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
 // handleSemanticSearch handles semantic code search requests
 func (cfs *CodeForgeServer) handleSemanticSearch(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, err := request.RequireString("query")

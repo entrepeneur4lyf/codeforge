@@ -11,7 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/entrepeneur4lyf/codeforge/internal/config"
+	"github.com/entrepeneur4lyf/codeforge/internal/events"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
+	"github.com/entrepeneur4lyf/codeforge/internal/llm/agent"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm/providers"
 )
 
@@ -188,14 +191,22 @@ func GetDefaultModel() string {
 
 // ChatSession represents an interactive chat session
 type ChatSession struct {
-	handler       llm.ApiHandler
-	messages      []llm.Message
-	systemPrompt  string
-	quiet         bool
-	model         string
-	format        string
-	commandRouter *CommandRouter
-	favorites     *Favorites
+	handler         llm.ApiHandler
+	messages        []llm.Message
+	systemPrompt    string
+	quiet           bool
+	model           string
+	format          string
+	commandRouter   *CommandRouter
+	favorites       *Favorites
+	contextGathered bool   // Track if context has been gathered for this session
+	sessionContext  string // Store the gathered context for the session
+
+	// Agent integration
+	agentService agent.Service
+	eventManager *events.Manager
+	sessionID    string
+	currentAgent config.AgentName
 }
 
 // NewChatSession creates a new chat session with the specified configuration
@@ -329,6 +340,131 @@ func (cs *ChatSession) StartInteractive() error {
 	return nil
 }
 
+// SetAgentService sets the agent service for this chat session
+func (cs *ChatSession) SetAgentService(agentService agent.Service, eventManager *events.Manager, sessionID string) {
+	cs.agentService = agentService
+	cs.eventManager = eventManager
+	cs.sessionID = sessionID
+	cs.currentAgent = config.AgentCoder // Default to coder agent
+}
+
+// ProcessMessageWithAgent processes a message using the agent system
+func (cs *ChatSession) ProcessMessageWithAgent(userInput string) (string, error) {
+	// First, check if this is a direct command (build, file operations)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if commandResponse, handled := cs.commandRouter.RouteDirectCommand(ctx, userInput); handled {
+		// Direct command was handled, return the response
+		return commandResponse, nil
+	}
+
+	// Use agent service if available
+	if cs.agentService != nil {
+		return cs.processWithAgent(ctx, userInput)
+	}
+
+	// Fallback to original processing
+	return cs.ProcessMessage(userInput)
+}
+
+// processWithAgent processes the message using the agent service
+func (cs *ChatSession) processWithAgent(ctx context.Context, userInput string) (string, error) {
+	// Gather context only once per session
+	if !cs.contextGathered {
+		cs.sessionContext = cs.commandRouter.GatherContext(ctx, userInput)
+		cs.contextGathered = true
+	}
+
+	// Prepare content blocks
+	var attachments []llm.ContentBlock
+	if cs.sessionContext != "" {
+		attachments = append(attachments, llm.TextBlock{
+			Text: "\n\n**Relevant Context:**\n" + cs.sessionContext,
+		})
+	}
+
+	// Run agent
+	eventChan, err := cs.agentService.Run(ctx, cs.sessionID, cs.currentAgent, userInput, attachments...)
+	if err != nil {
+		return "", fmt.Errorf("failed to run agent: %w", err)
+	}
+
+	// Process agent events
+	var fullResponse strings.Builder
+	var usage *llm.Usage
+
+	for event := range eventChan {
+		switch event.Type {
+		case agent.AgentEventTextChunk:
+			if text, ok := event.Data["text"].(string); ok {
+				fullResponse.WriteString(text)
+				if !cs.quiet {
+					fmt.Print(text)
+				}
+			}
+
+		case agent.AgentEventUsage:
+			if inputTokens, ok := event.Data["input_tokens"].(int); ok {
+				if outputTokens, ok := event.Data["output_tokens"].(int); ok {
+					if totalCost, ok := event.Data["total_cost"].(float64); ok {
+						usage = &llm.Usage{
+							PromptTokens:     inputTokens,
+							CompletionTokens: outputTokens,
+							TotalTokens:      inputTokens + outputTokens,
+							TotalCost:        totalCost,
+						}
+					}
+				}
+			}
+
+		case agent.AgentEventError:
+			if errorMsg, ok := event.Data["error"].(string); ok {
+				return "", fmt.Errorf("agent error: %s", errorMsg)
+			}
+
+		case agent.AgentEventCompleted:
+			// Agent completed successfully
+			break
+		}
+	}
+
+	response := fullResponse.String()
+
+	// Add messages to conversation history
+	userMessage := llm.Message{
+		Role: "user",
+		Content: []llm.ContentBlock{
+			llm.TextBlock{Text: userInput},
+		},
+	}
+	cs.messages = append(cs.messages, userMessage)
+
+	assistantMessage := llm.Message{
+		Role: "assistant",
+		Content: []llm.ContentBlock{
+			llm.TextBlock{Text: response},
+		},
+	}
+	cs.messages = append(cs.messages, assistantMessage)
+
+	// Show usage info in non-quiet mode
+	if !cs.quiet && usage != nil {
+		fmt.Printf("\n\n💡 Tokens: %d input, %d output", usage.PromptTokens, usage.CompletionTokens)
+		if usage.TotalCost > 0 {
+			fmt.Printf(" | Cost: $%.4f", usage.TotalCost)
+		}
+		fmt.Println()
+	}
+
+	return response, nil
+}
+
+// SetCurrentAgent sets the current agent for this session
+func (cs *ChatSession) SetCurrentAgent(agentName config.AgentName) {
+	cs.currentAgent = agentName
+}
+
 // ProcessMessage processes a single message and returns the AI response
 func (cs *ChatSession) ProcessMessage(userInput string) (string, error) {
 	// First, check if this is a direct command (build, file operations)
@@ -340,13 +476,16 @@ func (cs *ChatSession) ProcessMessage(userInput string) (string, error) {
 		return commandResponse, nil
 	}
 
-	// For AI processing, gather context using LSP and vector search
-	contextInfo := cs.commandRouter.GatherContext(ctx, userInput)
+	// Gather context only once per session
+	if !cs.contextGathered {
+		cs.sessionContext = cs.commandRouter.GatherContext(ctx, userInput)
+		cs.contextGathered = true
+	}
 
-	// Enhance the user input with context
+	// Enhance the user input with session context
 	enhancedPrompt := userInput
-	if contextInfo != "" {
-		enhancedPrompt = userInput + "\n\n**Relevant Context:**\n" + contextInfo
+	if cs.sessionContext != "" {
+		enhancedPrompt = userInput + "\n\n**Relevant Context:**\n" + cs.sessionContext
 	}
 
 	// Add user message to conversation

@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -16,6 +18,8 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
 	"github.com/entrepeneur4lyf/codeforge/internal/ml"
 	"github.com/spf13/cobra"
+
+	"github.com/entrepeneur4lyf/codeforge/internal/commands"
 )
 
 var (
@@ -28,10 +32,46 @@ var (
 	model    string
 	provider string
 	format   string
+	logFile  *os.File // For cleanup
 )
 
 // Global app instance for integrated systems
 var codeforgeApp *app.App
+
+// setupLogging configures logging to redirect verbose output to a file
+func setupLogging(workingDir string, debug bool) error {
+	if debug {
+		// In debug mode, keep logging to stderr
+		return nil
+	}
+
+	// Create .codeforge directory if it doesn't exist
+	logDir := filepath.Join(workingDir, ".codeforge")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	// Create log file
+	logPath := filepath.Join(logDir, "codeforge.log")
+	var err error
+	logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create log file: %w", err)
+	}
+
+	// Redirect log output to file
+	log.SetOutput(logFile)
+
+	return nil
+}
+
+// cleanupLogging closes the log file if it was opened
+func cleanupLogging() {
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
+	}
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "codeforge [prompt]",
@@ -55,6 +95,11 @@ Features:
 	SilenceErrors:     false,
 	Args:              cobra.ArbitraryArgs, // Accept any arguments
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Setup logging to file (unless in debug mode)
+		if err := setupLogging(workingDir, debug); err != nil {
+			return fmt.Errorf("failed to setup logging: %w", err)
+		}
+
 		// Initialize CodeForge application with all integrated systems
 		appConfig := &app.AppConfig{
 			WorkspaceRoot:     workingDir,
@@ -85,11 +130,11 @@ Features:
 			return fmt.Errorf("failed to initialize LSP clients: %w", err)
 		}
 
-		// Initialize ML service (graceful degradation if it fails)
-		if err := ml.Initialize(codeforgeApp.Config); err != nil {
-			// Don't fail the entire application if ML initialization fails
-			fmt.Printf("⚠️  ML features disabled: %v\n", err)
-		}
+		// Initialize ML service silently for model context (graceful degradation if it fails)
+		ml.Initialize(codeforgeApp.Config) // Ignore errors - ML is for model context only
+
+		// Auto-generate project overview based on project state
+		autoGenerateProjectOverview()
 
 		return nil
 	},
@@ -125,6 +170,91 @@ func init() {
 	rootCmd.Flags().StringVarP(&model, "model", "m", "", "Specify the model to use")
 	rootCmd.Flags().StringVarP(&provider, "provider", "p", "", "Specify the provider (anthropic, openai, openrouter, etc.)")
 	rootCmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, markdown)")
+
+	// Add PRD command
+	addPRDCommand()
+}
+
+// addPRDCommand adds the PRD command to the root command
+func addPRDCommand() {
+	prdCmd := &cobra.Command{
+		Use:   "prd",
+		Short: "Create and manage Project Requirements Documents (PRD)",
+		Long: `PRD commands help create structured project documentation that provides context for all AI interactions in CodeForge.
+
+Commands:
+  create    Create a new PRD through interactive questions
+  analyze   Analyze existing project and generate PRD automatically
+  check     Check for existing PRD and offer to create one`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) == 0 {
+				cmd.Help()
+				return
+			}
+
+			// Get the file manager from the global app
+			if codeforgeApp == nil {
+				fmt.Println("❌ CodeForge app not initialized")
+				return
+			}
+
+			// Create PRD command with app's file manager
+			prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
+
+			// Execute the PRD command
+			if err := prdCommand.Execute(cmd.Context(), args); err != nil {
+				fmt.Printf("❌ PRD command failed: %v\n", err)
+			}
+		},
+	}
+
+	// Add subcommands
+	prdCmd.AddCommand(&cobra.Command{
+		Use:   "create",
+		Short: "Create a new PRD through interactive questions",
+		Run: func(cmd *cobra.Command, args []string) {
+			if codeforgeApp == nil {
+				fmt.Println("❌ CodeForge app not initialized")
+				return
+			}
+			prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
+			if err := prdCommand.Execute(cmd.Context(), []string{"create"}); err != nil {
+				fmt.Printf("❌ PRD creation failed: %v\n", err)
+			}
+		},
+	})
+
+	prdCmd.AddCommand(&cobra.Command{
+		Use:   "analyze",
+		Short: "Analyze existing project and generate PRD automatically",
+		Run: func(cmd *cobra.Command, args []string) {
+			if codeforgeApp == nil {
+				fmt.Println("❌ CodeForge app not initialized")
+				return
+			}
+			prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
+			if err := prdCommand.Execute(cmd.Context(), []string{"analyze"}); err != nil {
+				fmt.Printf("❌ PRD analysis failed: %v\n", err)
+			}
+		},
+	})
+
+	prdCmd.AddCommand(&cobra.Command{
+		Use:   "check",
+		Short: "Check for existing PRD and offer to create one",
+		Run: func(cmd *cobra.Command, args []string) {
+			if codeforgeApp == nil {
+				fmt.Println("❌ CodeForge app not initialized")
+				return
+			}
+			prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
+			if err := prdCommand.Execute(cmd.Context(), []string{"check"}); err != nil {
+				fmt.Printf("❌ PRD check failed: %v\n", err)
+			}
+		},
+	})
+
+	rootCmd.AddCommand(prdCmd)
 }
 
 func Execute() {
@@ -133,6 +263,7 @@ func Execute() {
 		if codeforgeApp != nil {
 			codeforgeApp.Close()
 		}
+		cleanupLogging()
 	}()
 
 	if err := rootCmd.Execute(); err != nil {
@@ -330,6 +461,9 @@ func init() {
 
 		// Shutdown ML service
 		ml.Shutdown()
+
+		// Cleanup logging
+		cleanupLogging()
 
 		os.Exit(0)
 	}()

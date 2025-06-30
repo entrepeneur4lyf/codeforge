@@ -46,6 +46,11 @@ func (cr *CommandRouter) RouteDirectCommand(ctx context.Context, userInput strin
 		return cr.handleGitCommitCommand(ctx, userInput)
 	}
 
+	// Git conflict resolution commands - these are direct actions
+	if cr.isGitConflictCommand(input) {
+		return cr.handleGitConflictCommand(ctx, userInput)
+	}
+
 	// Not a direct command
 	return "", false
 }
@@ -115,8 +120,121 @@ func (cr *CommandRouter) handleGitCommitCommand(ctx context.Context, userInput s
 	return fmt.Sprintf("✅ Successfully committed%s with AI-generated message:\n\n%s", stagedText, commitMessage), true
 }
 
+// Git conflict command detection and handling
+func (cr *CommandRouter) isGitConflictCommand(input string) bool {
+	conflictKeywords := []string{
+		"conflict", "conflicts", "merge conflict", "merge conflicts", "resolve conflict",
+		"resolve conflicts", "conflict resolution", "fix conflict", "fix conflicts",
+		"git conflict", "git conflicts", "conflict help", "conflict assistance",
+		"merge issue", "merge issues", "conflict detector", "detect conflicts",
+	}
+
+	for _, keyword := range conflictKeywords {
+		if strings.Contains(input, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func (cr *CommandRouter) handleGitConflictCommand(ctx context.Context, userInput string) (string, bool) {
+	input := strings.ToLower(strings.TrimSpace(userInput))
+
+	// Create git repository instance
+	repo := git.NewRepository(cr.workingDir)
+
+	// Check if git is available and this is a git repository
+	if !git.IsGitInstalled() {
+		return "❌ Git is not installed", true
+	}
+
+	if !repo.IsGitRepository() {
+		return "❌ Not a git repository", true
+	}
+
+	// Check if user just wants to detect conflicts
+	detectOnly := strings.Contains(input, "detect") || strings.Contains(input, "check") || strings.Contains(input, "find")
+
+	// Detect conflicts
+	conflicts, err := repo.DetectConflicts(ctx)
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to detect conflicts: %v", err), true
+	}
+
+	if len(conflicts) == 0 {
+		return "✅ No merge conflicts detected in the repository", true
+	}
+
+	if detectOnly {
+		var response strings.Builder
+		response.WriteString(fmt.Sprintf("🔍 Found %d file(s) with merge conflicts:\n\n", len(conflicts)))
+
+		for i, conflict := range conflicts {
+			response.WriteString(fmt.Sprintf("%d. %s (%s) - %d conflict section(s)\n",
+				i+1, conflict.FilePath, conflict.ConflictType, len(conflict.Conflicts)))
+		}
+
+		response.WriteString("\n💡 To get AI-powered resolution suggestions, say 'resolve conflicts' or 'conflict help'")
+		return response.String(), true
+	}
+
+	// Create conflict resolver and get AI suggestions
+	resolver, err := git.NewConflictResolver()
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to create conflict resolver: %v", err), true
+	}
+
+	resolutions, err := resolver.ResolveConflicts(ctx, conflicts)
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to get conflict resolutions: %v", err), true
+	}
+
+	// Check if user wants to auto-apply
+	autoApply := strings.Contains(input, "apply") || strings.Contains(input, "fix") || strings.Contains(input, "auto")
+
+	var response strings.Builder
+	response.WriteString(fmt.Sprintf("🤖 AI Conflict Resolution Analysis for %d file(s):\n\n", len(resolutions)))
+
+	appliedCount := 0
+	for _, resolution := range resolutions {
+		response.WriteString(fmt.Sprintf("📁 **%s** (Confidence: %s)\n", resolution.FilePath, resolution.Confidence))
+		response.WriteString(fmt.Sprintf("   %s\n\n", resolution.Explanation))
+
+		for j, sectionRes := range resolution.Resolutions {
+			response.WriteString(fmt.Sprintf("   Conflict %d: %s\n", j+1, sectionRes.Resolution))
+			response.WriteString(fmt.Sprintf("   Reasoning: %s\n", sectionRes.Reasoning))
+		}
+
+		if autoApply {
+			if err := repo.ApplyResolution(ctx, resolution); err == nil {
+				response.WriteString("   ✅ Applied automatically\n")
+				appliedCount++
+			} else {
+				response.WriteString(fmt.Sprintf("   ❌ Failed to apply: %v\n", err))
+			}
+		}
+		response.WriteString("\n")
+	}
+
+	if autoApply {
+		response.WriteString(fmt.Sprintf("🎯 Applied %d out of %d resolutions automatically\n", appliedCount, len(resolutions)))
+		if appliedCount > 0 {
+			response.WriteString("💡 Review the changes and commit when ready")
+		}
+	} else {
+		response.WriteString("💡 To apply these resolutions automatically, say 'apply conflict resolutions' or 'fix conflicts'")
+	}
+
+	return response.String(), true
+}
+
 // GatherContext collects relevant context using ML-powered code intelligence
 func (cr *CommandRouter) GatherContext(ctx context.Context, userInput string) string {
+	// Only gather context for code-related queries to avoid unnecessary ML searches
+	if !cr.isCodeRelatedQuery(userInput) {
+		return ""
+	}
+
 	// Try to get ML service for intelligent context
 	mlService := ml.GetService()
 	if mlService != nil && mlService.IsEnabled() {
@@ -136,6 +254,53 @@ func (cr *CommandRouter) GatherContext(ctx context.Context, userInput string) st
 	// Graceful degradation - return empty context if ML is not available
 	// This allows the existing chat system to work normally
 	return ""
+}
+
+// isCodeRelatedQuery determines if a query is code-related and needs context
+func (cr *CommandRouter) isCodeRelatedQuery(input string) bool {
+	input = strings.ToLower(strings.TrimSpace(input))
+
+	// Skip simple greetings and non-code queries
+	simpleGreetings := []string{
+		"hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+		"thanks", "thank you", "bye", "goodbye", "ok", "okay", "yes", "no",
+		"sure", "great", "awesome", "cool", "nice",
+	}
+
+	for _, greeting := range simpleGreetings {
+		if input == greeting || input == greeting+"!" || input == greeting+"." {
+			return false
+		}
+	}
+
+	// Check for code-related keywords
+	codeKeywords := []string{
+		"code", "function", "method", "class", "variable", "import", "export",
+		"error", "bug", "debug", "fix", "implement", "create", "add", "remove",
+		"search", "find", "look", "show", "explain", "how", "what", "where",
+		"file", "directory", "project", "build", "compile", "test", "run",
+		"git", "commit", "merge", "branch", "pull", "push", "diff", "status", "conflict", "conflicts",
+		"api", "endpoint", "database", "query", "sql", "json", "xml", "yaml",
+		"config", "configuration", "setting", "option", "parameter", "argument",
+		"library", "package", "dependency", "module", "component", "service",
+		"interface", "struct", "type", "enum", "constant", "global", "local",
+		"async", "await", "promise", "callback", "event", "listener", "handler",
+		"loop", "condition", "if", "else", "switch", "case", "for", "while",
+		"return", "throw", "catch", "try", "finally", "exception", "error",
+	}
+
+	for _, keyword := range codeKeywords {
+		if strings.Contains(input, keyword) {
+			return true
+		}
+	}
+
+	// If input is longer than a simple greeting, it might be code-related
+	if len(strings.Fields(input)) > 3 {
+		return true
+	}
+
+	return false
 }
 
 // Build command detection and handling

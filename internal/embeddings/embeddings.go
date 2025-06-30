@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -69,42 +70,42 @@ func Initialize(cfg *config.Config) error {
 		case "ollama":
 			if isOllamaAvailable() {
 				if err := checkProviderChange(ProviderOllama); err != nil {
-					fmt.Printf("⚠️ Provider change validation failed: %v\n", err)
+					log.Printf("⚠️ Provider change validation failed: %v", err)
 				}
 				embeddingService.provider = ProviderOllama
-				fmt.Println("Using Ollama embedding service (configured)")
+				log.Printf("Using Ollama embedding service (configured)")
 				embeddingService.initialized = true
 				return nil
 			}
-			fmt.Println("Ollama configured but not available, falling back...")
+			log.Printf("Ollama configured but not available, falling back...")
 		case "openai":
 			if isOpenAIAvailable() {
 				if err := checkProviderChange(ProviderOpenAI); err != nil {
-					fmt.Printf("⚠️ Provider change validation failed: %v\n", err)
+					log.Printf("⚠️ Provider change validation failed: %v", err)
 				}
 				embeddingService.provider = ProviderOpenAI
-				fmt.Println("Using OpenAI embedding service (configured)")
+				log.Printf("Using OpenAI embedding service (configured)")
 				embeddingService.initialized = true
 				return nil
 			}
-			fmt.Println("OpenAI configured but not available, falling back...")
+			log.Printf("OpenAI configured but not available, falling back...")
 		}
 	}
 
 	// Check provider change for fallback
 	if err := checkProviderChange(ProviderFallback); err != nil {
-		fmt.Printf("⚠️ Provider change validation failed: %v\n", err)
+		log.Printf("⚠️ Provider change validation failed: %v", err)
 	}
 
 	// Default to fallback (conservative approach)
 	embeddingService.provider = ProviderFallback
-	fmt.Println("Using fallback embedding service (use /embedding to configure)")
+	log.Printf("Using fallback embedding service (use /embedding to configure)")
 
 	// Show available options
 	if isOllamaAvailable() {
-		fmt.Println("💡 Ollama detected - use '/embedding ollama' for better quality")
+		log.Printf("💡 Ollama detected - use '/embedding ollama' for better quality")
 	} else if isOpenAIAvailable() {
-		fmt.Println("💡 OpenAI API detected - use '/embedding openai' for better quality")
+		log.Printf("💡 OpenAI API detected - use '/embedding openai' for better quality")
 	}
 
 	embeddingService.initialized = true
@@ -290,7 +291,7 @@ func getOpenAIEmbedding(ctx context.Context, text string) ([]float32, error) {
 
 // checkProviderChange validates embedding provider changes and triggers reindex if needed
 func checkProviderChange(newProvider EmbeddingProvider) error {
-	fmt.Printf("🔧 Setting up embedding provider: %s (%d dimensions)\n",
+	log.Printf("🔧 Setting up embedding provider: %s (%d dimensions)",
 		getProviderName(newProvider), getProviderDimensions(newProvider))
 
 	// Simple approach: let the vector database handle schema validation
@@ -404,7 +405,7 @@ func ValidateProviderChange(newProviderName string) error {
 	embeddingService.provider = newProvider
 	embeddingService.mu.Unlock()
 
-	fmt.Printf("✅ Successfully changed embedding provider to: %s\n", getProviderName(newProvider))
+	log.Printf("✅ Successfully changed embedding provider to: %s", getProviderName(newProvider))
 	return nil
 }
 

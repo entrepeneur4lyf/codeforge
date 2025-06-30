@@ -65,6 +65,7 @@ func NewFileWatcher(graph *CodeGraph, rootPath string) (*FileWatcher, error) {
 			".vscode", ".idea", ".vs",
 			"build", "dist", "out",
 			"__pycache__", ".pytest_cache",
+			".codeforge", // Exclude entire .codeforge directory to prevent log file spam
 			"*.log", "*.tmp", "*.temp",
 			"*.exe", "*.dll", "*.so", "*.dylib",
 		},
