@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/config"
+	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -46,6 +47,21 @@ func NewCodeForgeServer(cfg *config.Config, vdb *vectordb.VectorDB, workspaceRoo
 	cfs.registerPrompts()
 
 	return cfs
+}
+
+// NewPermissionAwareCodeForgeServer creates a new CodeForge MCP server with permission checking
+func NewPermissionAwareCodeForgeServer(cfg *config.Config, vdb *vectordb.VectorDB, workspaceRoot string, permService *permissions.PermissionService) *PermissionAwareMCPServer {
+	// Create the base server
+	baseServer := NewCodeForgeServer(cfg, vdb, workspaceRoot)
+
+	// Wrap with permission checking
+	permAwareServer := NewPermissionAwareMCPServer(baseServer, permService)
+
+	// Register permission-aware tools (this will replace the base tools)
+	permAwareServer.RegisterPermissionAwareTools()
+
+	log.Printf("Created permission-aware CodeForge MCP server")
+	return permAwareServer
 }
 
 // registerTools registers all CodeForge tools
