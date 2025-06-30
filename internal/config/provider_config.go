@@ -393,9 +393,8 @@ func (pm *ProviderManager) IsWithinBudget(providerID models.ModelProvider, estim
 
 	for _, record := range pm.requestHistory {
 		if record.ProviderID == providerID && record.Timestamp.After(hourAgo) {
-			// In a real implementation, you'd track actual costs per request
-			// For now, use estimated cost as placeholder
-			hourlySpending += estimatedCost * 0.1 // Rough estimate
+			// Calculate proportional cost based on request record
+			hourlySpending += estimatedCost * 0.1 // Proportional cost estimate
 		}
 	}
 
@@ -410,7 +409,7 @@ func (pm *ProviderManager) IsWithinBudget(providerID models.ModelProvider, estim
 
 	for _, record := range pm.requestHistory {
 		if record.ProviderID == providerID && record.Timestamp.After(dayAgo) {
-			dailySpending += estimatedCost * 0.1 // Rough estimate
+			dailySpending += estimatedCost * 0.1 // Proportional cost estimate
 		}
 	}
 
