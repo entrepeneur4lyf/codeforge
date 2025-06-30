@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/entrepeneur4lyf/codeforge/internal/app"
 	"github.com/entrepeneur4lyf/codeforge/internal/config"
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 	"github.com/gorilla/mux"
@@ -20,6 +21,7 @@ type Server struct {
 	auth        *LocalhostAuth
 	upgrader    websocket.Upgrader
 	chatStorage *ChatStorage
+	app         *app.App // Integrated CodeForge application
 }
 
 // NewServer creates a new API server
@@ -28,6 +30,23 @@ func NewServer(cfg *config.Config) *Server {
 		config:      cfg,
 		auth:        NewLocalhostAuth(),
 		chatStorage: NewChatStorage(),
+		upgrader: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				// Only allow localhost connections for security
+				return isLocalhostOrigin(r)
+			},
+		},
+	}
+}
+
+// NewServerWithApp creates a new API server with integrated CodeForge app
+func NewServerWithApp(cfg *config.Config, codeforgeApp *app.App) *Server {
+	return &Server{
+		config:      cfg,
+		vectorDB:    codeforgeApp.VectorDB,
+		auth:        NewLocalhostAuth(),
+		chatStorage: NewChatStorage(),
+		app:         codeforgeApp,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// Only allow localhost connections for security

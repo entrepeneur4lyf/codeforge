@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -318,11 +319,29 @@ func (s *Server) sendChatMessage(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 
-	// Process message with LLM
-	response, err := llmSession.ProcessMessage(req.Message)
-	if err != nil {
-		s.writeError(w, fmt.Sprintf("Failed to process message: %v", err), http.StatusInternalServerError)
-		return
+	// Process message with integrated CodeForge app if available
+	var response string
+	if s.app != nil {
+		ctx := r.Context()
+		appResponse, err := s.app.ProcessChatMessage(ctx, sessionID, req.Message, model)
+		if err != nil {
+			log.Printf("Error processing chat message with app: %v", err)
+			// Fallback to LLM session
+			response, err = llmSession.ProcessMessage(req.Message)
+			if err != nil {
+				s.writeError(w, fmt.Sprintf("Failed to process message: %v", err), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			response = appResponse
+		}
+	} else {
+		// Use LLM session directly
+		response, err = llmSession.ProcessMessage(req.Message)
+		if err != nil {
+			s.writeError(w, fmt.Sprintf("Failed to process message: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Create assistant message

@@ -3,7 +3,6 @@ package context
 import (
 	"fmt"
 	"log"
-	"math"
 	"sort"
 	"strings"
 
@@ -42,28 +41,28 @@ type SelectionStrategy struct {
 
 // SmartSelectionResult represents the result of smart context selection
 type SmartSelectionResult struct {
-	SelectedMessages    []ConversationMessage `json:"selected_messages"`
-	OriginalCount       int                   `json:"original_count"`
-	SelectedCount       int                   `json:"selected_count"`
-	TotalTokens         int                   `json:"total_tokens"`
-	Strategy            SelectionStrategy     `json:"strategy"`
-	RelevanceScores     []RelevanceScore      `json:"relevance_scores"`
-	DependencyGraph     *DependencyGraph      `json:"dependency_graph,omitempty"`
-	SelectionReasoning  string                `json:"selection_reasoning"`
-	CoverageScore       float64               `json:"coverage_score"`
+	SelectedMessages   []ConversationMessage `json:"selected_messages"`
+	OriginalCount      int                   `json:"original_count"`
+	SelectedCount      int                   `json:"selected_count"`
+	TotalTokens        int                   `json:"total_tokens"`
+	Strategy           SelectionStrategy     `json:"strategy"`
+	RelevanceScores    []RelevanceScore      `json:"relevance_scores"`
+	DependencyGraph    *DependencyGraph      `json:"dependency_graph,omitempty"`
+	SelectionReasoning string                `json:"selection_reasoning"`
+	CoverageScore      float64               `json:"coverage_score"`
 }
 
 // SelectSmartContext intelligently selects context based on query analysis
 func (ss *SmartSelector) SelectSmartContext(messages []ConversationMessage, query string, modelID string) (*SmartSelectionResult, error) {
 	// Analyze query to determine optimal strategy
 	strategy := ss.analyzeQueryAndDetermineStrategy(query, modelID)
-	
+
 	return ss.SelectWithStrategy(messages, query, modelID, strategy)
 }
 
 // SelectWithStrategy selects context using a specific strategy
 func (ss *SmartSelector) SelectWithStrategy(messages []ConversationMessage, query string, modelID string, strategy SelectionStrategy) (*SmartSelectionResult, error) {
-	log.Printf("Smart context selection: %d messages, query: '%.50s...', strategy: max_tokens=%d", 
+	log.Printf("Smart context selection: %d messages, query: '%.50s...', strategy: max_tokens=%d",
 		len(messages), query, strategy.MaxTokens)
 
 	// Step 1: Score relevance
@@ -103,7 +102,7 @@ func (ss *SmartSelector) SelectWithStrategy(messages []ConversationMessage, quer
 func (ss *SmartSelector) analyzeQueryAndDetermineStrategy(query string, modelID string) SelectionStrategy {
 	queryLower := strings.ToLower(query)
 	modelConfig := ss.config.GetModelConfig(modelID)
-	
+
 	// Base strategy
 	strategy := SelectionStrategy{
 		MaxTokens:           int(float64(modelConfig.ContextWindow) * 0.8), // Use 80% of context window
@@ -117,11 +116,11 @@ func (ss *SmartSelector) analyzeQueryAndDetermineStrategy(query string, modelID 
 	}
 
 	// Adjust based on query characteristics
-	
+
 	// Code-related queries
 	if ss.isCodeQuery(queryLower) {
 		strategy.PrioritizeCode = true
-		strategy.RelevanceThreshold = 0.4 // Higher threshold for code
+		strategy.RelevanceThreshold = 0.4   // Higher threshold for code
 		strategy.IncludeDependencies = true // Code often has dependencies
 	}
 
@@ -142,14 +141,14 @@ func (ss *SmartSelector) analyzeQueryAndDetermineStrategy(query string, modelID 
 	// Summary/overview queries
 	if ss.isSummaryQuery(queryLower) {
 		strategy.BalanceRoles = true
-		strategy.RelevanceThreshold = 0.5 // Higher threshold for summaries
+		strategy.RelevanceThreshold = 0.5    // Higher threshold for summaries
 		strategy.IncludeDependencies = false // Less important for summaries
 	}
 
 	// Long context queries
 	if ss.isLongContextQuery(queryLower) {
 		strategy.MaxTokens = int(float64(modelConfig.ContextWindow) * 0.95) // Use more context
-		strategy.RelevanceThreshold = 0.2 // Lower threshold to include more
+		strategy.RelevanceThreshold = 0.2                                   // Lower threshold to include more
 		strategy.IncludeRecent = true
 		strategy.RecentCount = 20
 	}
@@ -164,13 +163,13 @@ func (ss *SmartSelector) isCodeQuery(query string) bool {
 		"error", "bug", "syntax", "compile", "run", "execute", "algorithm",
 		"refactor", "optimize", "test", "unit test", "integration",
 	}
-	
+
 	for _, keyword := range codeKeywords {
 		if strings.Contains(query, keyword) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -192,13 +191,13 @@ func (ss *SmartSelector) isDebuggingQuery(query string) bool {
 		"debug", "error", "bug", "issue", "problem", "fix", "broken",
 		"not working", "fails", "crash", "exception", "stack trace",
 	}
-	
+
 	for _, keyword := range debugKeywords {
 		if strings.Contains(query, keyword) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -208,13 +207,13 @@ func (ss *SmartSelector) isSummaryQuery(query string) bool {
 		"summary", "summarize", "overview", "recap", "review",
 		"what happened", "what did we", "progress", "status",
 	}
-	
+
 	for _, keyword := range summaryKeywords {
 		if strings.Contains(query, keyword) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -224,13 +223,13 @@ func (ss *SmartSelector) isLongContextQuery(query string) bool {
 		"entire", "all", "complete", "full context", "everything",
 		"comprehensive", "detailed", "thorough", "full picture",
 	}
-	
+
 	for _, keyword := range longContextKeywords {
 		if strings.Contains(query, keyword) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -238,48 +237,48 @@ func (ss *SmartSelector) isLongContextQuery(query string) bool {
 func (ss *SmartSelector) selectMessagesByStrategy(messages []ConversationMessage, relevanceResult *RelevanceResult, dependencyGraph *DependencyGraph, strategy SelectionStrategy, modelID string) []ConversationMessage {
 	// Start with relevant messages
 	candidates := ss.getRelevantCandidates(messages, relevanceResult, strategy)
-	
+
 	// Add dependencies if needed
 	if strategy.IncludeDependencies && dependencyGraph != nil {
 		candidates = ss.addDependencies(candidates, dependencyGraph, messages)
 	}
-	
+
 	// Add recent messages if needed
 	if strategy.IncludeRecent {
 		candidates = ss.addRecentMessages(candidates, messages, strategy.RecentCount)
 	}
-	
+
 	// Balance roles if needed
 	if strategy.BalanceRoles {
 		candidates = ss.balanceRoles(candidates)
 	}
-	
+
 	// Prioritize code if needed
 	if strategy.PrioritizeCode {
 		candidates = ss.prioritizeCodeMessages(candidates)
 	}
-	
+
 	// Fit within token limit
 	selected := ss.fitWithinTokenLimit(candidates, strategy.MaxTokens, modelID)
-	
+
 	// Preserve order if needed
 	if strategy.PreserveOrder {
 		selected = ss.preserveOriginalOrder(selected, messages)
 	}
-	
+
 	return selected
 }
 
 // getRelevantCandidates gets messages that meet the relevance threshold
 func (ss *SmartSelector) getRelevantCandidates(messages []ConversationMessage, relevanceResult *RelevanceResult, strategy SelectionStrategy) []ConversationMessage {
 	var candidates []ConversationMessage
-	
+
 	for _, score := range relevanceResult.Scores {
 		if score.Score >= strategy.RelevanceThreshold {
 			candidates = append(candidates, messages[score.MessageIndex])
 		}
 	}
-	
+
 	return candidates
 }
 
@@ -295,12 +294,12 @@ func (ss *SmartSelector) addDependencies(candidates []ConversationMessage, depen
 			}
 		}
 	}
-	
+
 	// Add dependencies
 	for selectedIndex := range selectedIndices {
 		msgID := fmt.Sprintf("msg_%d", selectedIndex)
 		required := ss.dependencyTracker.GetRequiredMessages(dependencyGraph, msgID)
-		
+
 		for _, reqMsgID := range required {
 			var reqIndex int
 			fmt.Sscanf(reqMsgID, "msg_%d", &reqIndex)
@@ -310,7 +309,7 @@ func (ss *SmartSelector) addDependencies(candidates []ConversationMessage, depen
 			}
 		}
 	}
-	
+
 	return candidates
 }
 
@@ -319,22 +318,22 @@ func (ss *SmartSelector) addRecentMessages(candidates []ConversationMessage, all
 	if recentCount <= 0 || len(allMessages) == 0 {
 		return candidates
 	}
-	
+
 	// Get the most recent messages
 	startIndex := len(allMessages) - recentCount
 	if startIndex < 0 {
 		startIndex = 0
 	}
-	
+
 	recentMessages := allMessages[startIndex:]
-	
+
 	// Add recent messages that aren't already included
 	candidateSet := make(map[string]bool)
 	for _, candidate := range candidates {
 		key := fmt.Sprintf("%d:%s", candidate.Timestamp, candidate.Content[:min(50, len(candidate.Content))])
 		candidateSet[key] = true
 	}
-	
+
 	for _, recent := range recentMessages {
 		key := fmt.Sprintf("%d:%s", recent.Timestamp, recent.Content[:min(50, len(recent.Content))])
 		if !candidateSet[key] {
@@ -342,7 +341,7 @@ func (ss *SmartSelector) addRecentMessages(candidates []ConversationMessage, all
 			candidateSet[key] = true
 		}
 	}
-	
+
 	return candidates
 }
 
@@ -351,7 +350,7 @@ func (ss *SmartSelector) balanceRoles(candidates []ConversationMessage) []Conver
 	userMsgs := []ConversationMessage{}
 	assistantMsgs := []ConversationMessage{}
 	otherMsgs := []ConversationMessage{}
-	
+
 	for _, msg := range candidates {
 		switch msg.Role {
 		case "user":
@@ -362,18 +361,18 @@ func (ss *SmartSelector) balanceRoles(candidates []ConversationMessage) []Conver
 			otherMsgs = append(otherMsgs, msg)
 		}
 	}
-	
+
 	// Balance user and assistant messages (aim for roughly equal numbers)
 	maxRole := max(len(userMsgs), len(assistantMsgs))
 	if maxRole > 0 {
 		userLimit := min(len(userMsgs), maxRole)
 		assistantLimit := min(len(assistantMsgs), maxRole)
-		
+
 		balanced := append(userMsgs[:userLimit], assistantMsgs[:assistantLimit]...)
 		balanced = append(balanced, otherMsgs...)
 		return balanced
 	}
-	
+
 	return candidates
 }
 
@@ -381,7 +380,7 @@ func (ss *SmartSelector) balanceRoles(candidates []ConversationMessage) []Conver
 func (ss *SmartSelector) prioritizeCodeMessages(candidates []ConversationMessage) []ConversationMessage {
 	codeMsgs := []ConversationMessage{}
 	nonCodeMsgs := []ConversationMessage{}
-	
+
 	for _, msg := range candidates {
 		if ss.containsCode(msg.Content) {
 			codeMsgs = append(codeMsgs, msg)
@@ -389,7 +388,7 @@ func (ss *SmartSelector) prioritizeCodeMessages(candidates []ConversationMessage
 			nonCodeMsgs = append(nonCodeMsgs, msg)
 		}
 	}
-	
+
 	// Put code messages first
 	return append(codeMsgs, nonCodeMsgs...)
 }
@@ -398,13 +397,13 @@ func (ss *SmartSelector) prioritizeCodeMessages(candidates []ConversationMessage
 func (ss *SmartSelector) containsCode(content string) bool {
 	codeIndicators := []string{"```", "`", "function", "class", "def ", "var ", "let ", "const "}
 	contentLower := strings.ToLower(content)
-	
+
 	for _, indicator := range codeIndicators {
 		if strings.Contains(contentLower, indicator) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -413,7 +412,7 @@ func (ss *SmartSelector) fitWithinTokenLimit(candidates []ConversationMessage, m
 	if len(candidates) == 0 {
 		return candidates
 	}
-	
+
 	// Sort candidates by priority (this could be enhanced with more sophisticated scoring)
 	sort.Slice(candidates, func(i, j int) bool {
 		// Prioritize recent messages and those with code
@@ -421,21 +420,21 @@ func (ss *SmartSelector) fitWithinTokenLimit(candidates []ConversationMessage, m
 		jRecent := candidates[j].Timestamp > candidates[i].Timestamp
 		iCode := ss.containsCode(candidates[i].Content)
 		jCode := ss.containsCode(candidates[j].Content)
-		
+
 		if iCode && !jCode {
 			return true
 		}
 		if !iCode && jCode {
 			return false
 		}
-		
+
 		return iRecent && !jRecent
 	})
-	
+
 	// Select messages that fit within token limit
 	var selected []ConversationMessage
 	currentTokens := 0
-	
+
 	for _, candidate := range candidates {
 		msgTokens := ss.tokenCounter.CountMessageTokens(candidate, modelID).TotalTokens
 		if currentTokens+msgTokens <= maxTokens {
@@ -443,7 +442,7 @@ func (ss *SmartSelector) fitWithinTokenLimit(candidates []ConversationMessage, m
 			currentTokens += msgTokens
 		}
 	}
-	
+
 	return selected
 }
 
@@ -454,14 +453,14 @@ func (ss *SmartSelector) preserveOriginalOrder(selected []ConversationMessage, o
 	for i, msg := range original {
 		timestampToIndex[msg.Timestamp] = i
 	}
-	
+
 	// Sort selected messages by original index
 	sort.Slice(selected, func(i, j int) bool {
 		iIndex := timestampToIndex[selected[i].Timestamp]
 		jIndex := timestampToIndex[selected[j].Timestamp]
 		return iIndex < jIndex
 	})
-	
+
 	return selected
 }
 
@@ -470,20 +469,20 @@ func (ss *SmartSelector) calculateCoverageScore(selected, original []Conversatio
 	if len(original) == 0 {
 		return 1.0
 	}
-	
+
 	// Calculate coverage based on relevance scores of selected messages
 	totalRelevance := 0.0
 	selectedRelevance := 0.0
-	
+
 	selectedSet := make(map[string]bool)
 	for _, msg := range selected {
 		key := fmt.Sprintf("%d:%s", msg.Timestamp, msg.Content[:min(50, len(msg.Content))])
 		selectedSet[key] = true
 	}
-	
+
 	for i, score := range relevanceResult.Scores {
 		totalRelevance += score.Score
-		
+
 		if i < len(original) {
 			msg := original[i]
 			key := fmt.Sprintf("%d:%s", msg.Timestamp, msg.Content[:min(50, len(msg.Content))])
@@ -492,41 +491,41 @@ func (ss *SmartSelector) calculateCoverageScore(selected, original []Conversatio
 			}
 		}
 	}
-	
+
 	if totalRelevance == 0 {
 		return float64(len(selected)) / float64(len(original))
 	}
-	
+
 	return selectedRelevance / totalRelevance
 }
 
 // generateSelectionReasoning generates human-readable reasoning for the selection
 func (ss *SmartSelector) generateSelectionReasoning(strategy SelectionStrategy, relevanceResult *RelevanceResult, selectedCount, totalTokens int) string {
 	var reasons []string
-	
-	reasons = append(reasons, fmt.Sprintf("Selected %d/%d messages (%d tokens)", 
+
+	reasons = append(reasons, fmt.Sprintf("Selected %d/%d messages (%d tokens)",
 		selectedCount, relevanceResult.OriginalCount, totalTokens))
-	
+
 	if strategy.RelevanceThreshold > 0 {
 		reasons = append(reasons, fmt.Sprintf("relevance threshold: %.2f", strategy.RelevanceThreshold))
 	}
-	
+
 	if strategy.IncludeDependencies {
 		reasons = append(reasons, "included dependencies")
 	}
-	
+
 	if strategy.IncludeRecent {
 		reasons = append(reasons, fmt.Sprintf("included %d recent messages", strategy.RecentCount))
 	}
-	
+
 	if strategy.PrioritizeCode {
 		reasons = append(reasons, "prioritized code messages")
 	}
-	
+
 	if strategy.BalanceRoles {
 		reasons = append(reasons, "balanced user/assistant roles")
 	}
-	
+
 	return strings.Join(reasons, ", ")
 }
 

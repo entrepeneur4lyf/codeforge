@@ -3,7 +3,6 @@ package permissions
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 )
@@ -18,7 +17,7 @@ type FileOperationManager struct {
 // NewFileOperationManager creates a new file operation manager
 func NewFileOperationManager(service *PermissionService, workspaceRoot string) *FileOperationManager {
 	pathValidator := NewPathValidator(workspaceRoot)
-	
+
 	// Configure safe defaults
 	pathValidator.AddAllowedPath(workspaceRoot + "/*")
 	pathValidator.AddDeniedPath("/etc/*")
@@ -26,7 +25,7 @@ func NewFileOperationManager(service *PermissionService, workspaceRoot string) *
 	pathValidator.AddDeniedPath("/proc/*")
 	pathValidator.AddDeniedPath("/dev/*")
 	pathValidator.AddDeniedPath("/boot/*")
-	
+
 	return &FileOperationManager{
 		service:       service,
 		pathValidator: pathValidator,
@@ -46,13 +45,13 @@ type FileOperationRequest struct {
 
 // FileOperationResult represents the result of a file operation
 type FileOperationResult struct {
-	Success     bool                   `json:"success"`
-	Content     []byte                 `json:"content,omitempty"`
-	FileInfo    os.FileInfo            `json:"file_info,omitempty"`
-	Error       string                 `json:"error,omitempty"`
-	Permission  *Permission            `json:"permission,omitempty"`
-	PathResult  *PathValidationResult  `json:"path_result,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	Success    bool                   `json:"success"`
+	Content    []byte                 `json:"content,omitempty"`
+	FileInfo   os.FileInfo            `json:"file_info,omitempty"`
+	Error      string                 `json:"error,omitempty"`
+	Permission *Permission            `json:"permission,omitempty"`
+	PathResult *PathValidationResult  `json:"path_result,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // ReadFile reads a file with permission checking
@@ -412,10 +411,10 @@ func (fom *FileOperationManager) ListDirectory(ctx context.Context, req *FileOpe
 	for _, entry := range entries {
 		info, _ := entry.Info()
 		files = append(files, map[string]interface{}{
-			"name":    entry.Name(),
-			"is_dir":  entry.IsDir(),
-			"size":    info.Size(),
-			"mode":    info.Mode().String(),
+			"name":     entry.Name(),
+			"is_dir":   entry.IsDir(),
+			"size":     info.Size(),
+			"mode":     info.Mode().String(),
 			"mod_time": info.ModTime(),
 		})
 	}
@@ -438,7 +437,7 @@ func (fom *FileOperationManager) CopyFile(ctx context.Context, srcPath, destPath
 		Operation: "read",
 		Path:      srcPath,
 	}
-	
+
 	srcResult, err := fom.ReadFile(ctx, srcReq)
 	if err != nil || !srcResult.Success {
 		return srcResult, err

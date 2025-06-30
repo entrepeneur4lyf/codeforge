@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	_ "github.com/tursodatabase/go-libsql"
 )
 
 // PermissionStorage handles persistent storage of permissions
@@ -14,11 +16,17 @@ type PermissionStorage struct {
 	db *sql.DB
 }
 
-// NewPermissionStorage creates a new permission storage
+// NewPermissionStorage creates a new permission storage using libsql
 func NewPermissionStorage(dbPath string) (*PermissionStorage, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	// Use libsql like the vector database
+	db, err := sql.Open("libsql", "file:"+dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Test connection
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	storage := &PermissionStorage{db: db}

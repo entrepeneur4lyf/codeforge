@@ -2,19 +2,19 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
+	"github.com/entrepeneur4lyf/codeforge/internal/app"
 	"github.com/entrepeneur4lyf/codeforge/internal/chat"
-	"github.com/entrepeneur4lyf/codeforge/internal/config"
 	"github.com/entrepeneur4lyf/codeforge/internal/embeddings"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
 	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
 	"github.com/entrepeneur4lyf/codeforge/internal/ml"
-	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +29,9 @@ var (
 	provider string
 	format   string
 )
+
+// Global app instance for integrated systems
+var codeforgeApp *app.App
 
 var rootCmd = &cobra.Command{
 	Use:   "codeforge [prompt]",
@@ -52,36 +55,38 @@ Features:
 	SilenceErrors:     false,
 	Args:              cobra.ArbitraryArgs, // Accept any arguments
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Initialize configuration
-		cfg, err := config.Load(workingDir, debug)
+		// Initialize CodeForge application with all integrated systems
+		appConfig := &app.AppConfig{
+			WorkspaceRoot:     workingDir,
+			EnablePermissions: true,
+			EnableContextMgmt: true,
+			Debug:             debug,
+		}
+
+		ctx := context.Background()
+		var err error
+		codeforgeApp, err = app.NewApp(ctx, appConfig)
 		if err != nil {
-			return fmt.Errorf("failed to load configuration: %w", err)
+			return fmt.Errorf("failed to initialize CodeForge app: %w", err)
 		}
 
 		// Initialize LLM manager
-		if err := llm.Initialize(cfg); err != nil {
+		if err := llm.Initialize(codeforgeApp.Config); err != nil {
 			return fmt.Errorf("failed to initialize LLM providers: %w", err)
 		}
 
 		// Initialize embedding service
-		if err := embeddings.Initialize(cfg); err != nil {
+		if err := embeddings.Initialize(codeforgeApp.Config); err != nil {
 			return fmt.Errorf("failed to initialize embedding service: %w", err)
 		}
 
 		// Initialize LSP manager
-		if err := lsp.Initialize(cfg); err != nil {
+		if err := lsp.Initialize(codeforgeApp.Config); err != nil {
 			return fmt.Errorf("failed to initialize LSP clients: %w", err)
 		}
 
-		// MCP server is now standalone - no initialization needed here
-
-		// Initialize vector database
-		if err := vectordb.Initialize(cfg); err != nil {
-			return fmt.Errorf("failed to initialize vector database: %w", err)
-		}
-
 		// Initialize ML service (graceful degradation if it fails)
-		if err := ml.Initialize(cfg); err != nil {
+		if err := ml.Initialize(codeforgeApp.Config); err != nil {
 			// Don't fail the entire application if ML initialization fails
 			fmt.Printf("⚠️  ML features disabled: %v\n", err)
 		}
@@ -123,14 +128,43 @@ func init() {
 }
 
 func Execute() {
+	// Setup cleanup on exit
+	defer func() {
+		if codeforgeApp != nil {
+			codeforgeApp.Close()
+		}
+	}()
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
-// handleDirectPrompt processes a direct prompt with real LLM integration
+// handleDirectPrompt processes a direct prompt with integrated CodeForge app
 func handleDirectPrompt(prompt string) {
+	// Use integrated app if available
+	if codeforgeApp != nil {
+		ctx := context.Background()
+		response, err := codeforgeApp.ProcessChatMessage(ctx, "cli-session", prompt, model)
+		if err != nil {
+			if quiet {
+				fmt.Printf("Error: %v\n", err)
+			} else {
+				fmt.Printf("❌ Error processing message: %v\n", err)
+			}
+			return
+		}
+
+		if quiet {
+			fmt.Println(response)
+		} else {
+			fmt.Printf("🤖 %s\n", response)
+		}
+		return
+	}
+
+	// Fallback to original LLM integration
 	// Determine model to use
 	selectedModel := model
 	if selectedModel == "" {

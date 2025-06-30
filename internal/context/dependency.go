@@ -3,7 +3,6 @@ package context
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -27,17 +26,17 @@ func NewDependencyTracker() *DependencyTracker {
 type Dependency struct {
 	FromMessageID string  `json:"from_message_id"`
 	ToMessageID   string  `json:"to_message_id"`
-	Type          string  `json:"type"`          // "reference", "continuation", "answer", "code_dependency"
-	Strength      float64 `json:"strength"`      // 0.0 to 1.0
-	Reason        string  `json:"reason"`        // Human-readable explanation
+	Type          string  `json:"type"`     // "reference", "continuation", "answer", "code_dependency"
+	Strength      float64 `json:"strength"` // 0.0 to 1.0
+	Reason        string  `json:"reason"`   // Human-readable explanation
 }
 
 // DependencyGraph represents the complete dependency graph
 type DependencyGraph struct {
 	Messages     []ConversationMessage `json:"messages"`
 	Dependencies []Dependency          `json:"dependencies"`
-	Entities     map[string][]string   `json:"entities"`     // entity -> message IDs
-	Clusters     []MessageCluster      `json:"clusters"`     // Related message groups
+	Entities     map[string][]string   `json:"entities"` // entity -> message IDs
+	Clusters     []MessageCluster      `json:"clusters"` // Related message groups
 }
 
 // MessageCluster represents a group of related messages
@@ -62,7 +61,7 @@ func (dt *DependencyTracker) BuildDependencyGraph(messages []ConversationMessage
 	for i, msg := range messages {
 		msgID := fmt.Sprintf("msg_%d", i)
 		entities := dt.extractEntities(msg.Content)
-		
+
 		for _, entity := range entities {
 			dt.entities[entity] = append(dt.entities[entity], msgID)
 		}
@@ -71,12 +70,12 @@ func (dt *DependencyTracker) BuildDependencyGraph(messages []ConversationMessage
 	// Analyze dependencies between messages
 	for i, msg := range messages {
 		msgID := fmt.Sprintf("msg_%d", i)
-		
+
 		// Look for dependencies with previous messages
 		for j := 0; j < i; j++ {
 			prevMsg := messages[j]
 			prevMsgID := fmt.Sprintf("msg_%d", j)
-			
+
 			deps := dt.findDependencies(msg, prevMsg, msgID, prevMsgID)
 			dependencies = append(dependencies, deps...)
 		}
@@ -128,14 +127,14 @@ func (dt *DependencyTracker) findDependencies(msg, prevMsg ConversationMessage, 
 // findReferenceDepedency finds explicit references between messages
 func (dt *DependencyTracker) findReferenceDepedency(msg, prevMsg ConversationMessage, msgID, prevMsgID string) *Dependency {
 	content := strings.ToLower(msg.Content)
-	
+
 	// Look for reference patterns
 	referencePatterns := []string{
 		"as mentioned", "as discussed", "as shown", "as you said", "like you said",
 		"from above", "from before", "previously", "earlier", "as we saw",
 		"referring to", "based on", "following up", "continuing from",
 	}
-	
+
 	for _, pattern := range referencePatterns {
 		if strings.Contains(content, pattern) {
 			return &Dependency{
@@ -147,7 +146,7 @@ func (dt *DependencyTracker) findReferenceDepedency(msg, prevMsg ConversationMes
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -157,7 +156,7 @@ func (dt *DependencyTracker) findQuestionAnswerDependency(msg, prevMsg Conversat
 	if prevMsg.Role == "user" && msg.Role == "assistant" {
 		prevContent := strings.ToLower(prevMsg.Content)
 		currentContent := strings.ToLower(msg.Content)
-		
+
 		// Check for question indicators in previous message
 		hasQuestion := strings.Contains(prevMsg.Content, "?") ||
 			strings.Contains(prevContent, "how") ||
@@ -165,19 +164,19 @@ func (dt *DependencyTracker) findQuestionAnswerDependency(msg, prevMsg Conversat
 			strings.Contains(prevContent, "why") ||
 			strings.Contains(prevContent, "when") ||
 			strings.Contains(prevContent, "where")
-		
+
 		// Check for answer indicators in current message
 		hasAnswer := strings.Contains(currentContent, "here's") ||
 			strings.Contains(currentContent, "you can") ||
 			strings.Contains(currentContent, "to do this") ||
 			strings.Contains(currentContent, "the answer")
-		
+
 		if hasQuestion {
 			strength := 0.9
 			if hasAnswer {
 				strength = 1.0
 			}
-			
+
 			return &Dependency{
 				FromMessageID: msgID,
 				ToMessageID:   prevMsgID,
@@ -187,7 +186,7 @@ func (dt *DependencyTracker) findQuestionAnswerDependency(msg, prevMsg Conversat
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -196,11 +195,11 @@ func (dt *DependencyTracker) findCodeDependency(msg, prevMsg ConversationMessage
 	// Extract code blocks and function names
 	currentCode := dt.extractCodeElements(msg.Content)
 	prevCode := dt.extractCodeElements(prevMsg.Content)
-	
+
 	if len(currentCode) == 0 || len(prevCode) == 0 {
 		return nil
 	}
-	
+
 	// Look for shared code elements
 	sharedElements := 0
 	for _, curr := range currentCode {
@@ -210,13 +209,13 @@ func (dt *DependencyTracker) findCodeDependency(msg, prevMsg ConversationMessage
 			}
 		}
 	}
-	
+
 	if sharedElements > 0 {
 		strength := float64(sharedElements) / float64(len(currentCode))
 		if strength > 1.0 {
 			strength = 1.0
 		}
-		
+
 		return &Dependency{
 			FromMessageID: msgID,
 			ToMessageID:   prevMsgID,
@@ -225,7 +224,7 @@ func (dt *DependencyTracker) findCodeDependency(msg, prevMsg ConversationMessage
 			Reason:        fmt.Sprintf("Shares %d code elements", sharedElements),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -233,11 +232,11 @@ func (dt *DependencyTracker) findCodeDependency(msg, prevMsg ConversationMessage
 func (dt *DependencyTracker) findEntityDependency(msg, prevMsg ConversationMessage, msgID, prevMsgID string) *Dependency {
 	currentEntities := dt.extractEntities(msg.Content)
 	prevEntities := dt.extractEntities(prevMsg.Content)
-	
+
 	if len(currentEntities) == 0 || len(prevEntities) == 0 {
 		return nil
 	}
-	
+
 	// Find shared entities
 	sharedEntities := 0
 	for _, curr := range currentEntities {
@@ -247,13 +246,13 @@ func (dt *DependencyTracker) findEntityDependency(msg, prevMsg ConversationMessa
 			}
 		}
 	}
-	
+
 	if sharedEntities > 0 {
 		strength := float64(sharedEntities) / float64(len(currentEntities))
 		if strength > 1.0 {
 			strength = 1.0
 		}
-		
+
 		return &Dependency{
 			FromMessageID: msgID,
 			ToMessageID:   prevMsgID,
@@ -262,7 +261,7 @@ func (dt *DependencyTracker) findEntityDependency(msg, prevMsg ConversationMessa
 			Reason:        fmt.Sprintf("Shares %d entities", sharedEntities),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -271,12 +270,12 @@ func (dt *DependencyTracker) findContinuationDependency(msg, prevMsg Conversatio
 	// Check if messages are from the same role and close in time
 	if msg.Role == prevMsg.Role {
 		content := strings.ToLower(msg.Content)
-		
+
 		continuationPatterns := []string{
 			"also", "additionally", "furthermore", "moreover", "and",
 			"next", "then", "after that", "following", "continuing",
 		}
-		
+
 		for _, pattern := range continuationPatterns {
 			if strings.HasPrefix(content, pattern) {
 				return &Dependency{
@@ -289,14 +288,14 @@ func (dt *DependencyTracker) findContinuationDependency(msg, prevMsg Conversatio
 			}
 		}
 	}
-	
+
 	return nil
 }
 
 // extractEntities extracts named entities from text
 func (dt *DependencyTracker) extractEntities(content string) []string {
 	var entities []string
-	
+
 	// Extract function names
 	funcPattern := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(`)
 	funcMatches := funcPattern.FindAllStringSubmatch(content, -1)
@@ -305,7 +304,7 @@ func (dt *DependencyTracker) extractEntities(content string) []string {
 			entities = append(entities, "func:"+match[1])
 		}
 	}
-	
+
 	// Extract class names (capitalized words)
 	classPattern := regexp.MustCompile(`\b([A-Z][a-zA-Z0-9_]*)\b`)
 	classMatches := classPattern.FindAllStringSubmatch(content, -1)
@@ -314,7 +313,7 @@ func (dt *DependencyTracker) extractEntities(content string) []string {
 			entities = append(entities, "class:"+match[1])
 		}
 	}
-	
+
 	// Extract file names
 	filePattern := regexp.MustCompile(`\b([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)\b`)
 	fileMatches := filePattern.FindAllStringSubmatch(content, -1)
@@ -323,7 +322,7 @@ func (dt *DependencyTracker) extractEntities(content string) []string {
 			entities = append(entities, "file:"+match[1])
 		}
 	}
-	
+
 	// Extract variables (simple heuristic)
 	varPattern := regexp.MustCompile(`\b([a-z][a-zA-Z0-9_]*)\b`)
 	varMatches := varPattern.FindAllStringSubmatch(content, -1)
@@ -336,14 +335,14 @@ func (dt *DependencyTracker) extractEntities(content string) []string {
 			}
 		}
 	}
-	
+
 	return dt.deduplicateEntities(entities)
 }
 
 // extractCodeElements extracts code-specific elements
 func (dt *DependencyTracker) extractCodeElements(content string) []string {
 	var elements []string
-	
+
 	// Extract function calls
 	funcPattern := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(`)
 	funcMatches := funcPattern.FindAllStringSubmatch(content, -1)
@@ -352,7 +351,7 @@ func (dt *DependencyTracker) extractCodeElements(content string) []string {
 			elements = append(elements, match[1])
 		}
 	}
-	
+
 	// Extract imports/includes
 	importPattern := regexp.MustCompile(`(?:import|include|require)\s+['""]([^'""]+)['""]\s*`)
 	importMatches := importPattern.FindAllStringSubmatch(content, -1)
@@ -361,7 +360,7 @@ func (dt *DependencyTracker) extractCodeElements(content string) []string {
 			elements = append(elements, match[1])
 		}
 	}
-	
+
 	return dt.deduplicateEntities(elements)
 }
 
@@ -375,7 +374,7 @@ func (dt *DependencyTracker) isCommonWord(word string) bool {
 		"long": true, "make": true, "many": true, "over": true, "such": true,
 		"take": true, "than": true, "them": true, "well": true, "were": true,
 	}
-	
+
 	return commonWords[word]
 }
 
@@ -383,14 +382,14 @@ func (dt *DependencyTracker) isCommonWord(word string) bool {
 func (dt *DependencyTracker) deduplicateEntities(entities []string) []string {
 	seen := make(map[string]bool)
 	var result []string
-	
+
 	for _, entity := range entities {
 		if !seen[entity] {
 			seen[entity] = true
 			result = append(result, entity)
 		}
 	}
-	
+
 	return result
 }
 
@@ -404,12 +403,12 @@ func (dt *DependencyTracker) buildClusters(messages []ConversationMessage, depen
 			adjacency[dep.ToMessageID] = append(adjacency[dep.ToMessageID], dep.FromMessageID)
 		}
 	}
-	
+
 	// Find connected components (clusters)
 	visited := make(map[string]bool)
 	var clusters []MessageCluster
 	clusterID := 0
-	
+
 	for i := range messages {
 		msgID := fmt.Sprintf("msg_%d", i)
 		if !visited[msgID] {
@@ -421,7 +420,7 @@ func (dt *DependencyTracker) buildClusters(messages []ConversationMessage, depen
 			}
 		}
 	}
-	
+
 	return clusters
 }
 
@@ -429,21 +428,21 @@ func (dt *DependencyTracker) buildClusters(messages []ConversationMessage, depen
 func (dt *DependencyTracker) findCluster(startID string, adjacency map[string][]string, visited map[string]bool, messages []ConversationMessage) MessageCluster {
 	var messageIDs []string
 	var topics []string
-	
+
 	// DFS
 	stack := []string{startID}
-	
+
 	for len(stack) > 0 {
 		msgID := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		
+
 		if visited[msgID] {
 			continue
 		}
-		
+
 		visited[msgID] = true
 		messageIDs = append(messageIDs, msgID)
-		
+
 		// Extract topic from message content
 		if msgIndex := dt.extractMessageIndex(msgID); msgIndex < len(messages) {
 			topic := dt.extractTopic(messages[msgIndex].Content)
@@ -451,7 +450,7 @@ func (dt *DependencyTracker) findCluster(startID string, adjacency map[string][]
 				topics = append(topics, topic)
 			}
 		}
-		
+
 		// Add neighbors to stack
 		for _, neighbor := range adjacency[msgID] {
 			if !visited[neighbor] {
@@ -459,13 +458,13 @@ func (dt *DependencyTracker) findCluster(startID string, adjacency map[string][]
 			}
 		}
 	}
-	
+
 	// Determine cluster topic
 	clusterTopic := "General Discussion"
 	if len(topics) > 0 {
 		clusterTopic = dt.findMostCommonTopic(topics)
 	}
-	
+
 	return MessageCluster{
 		MessageIDs:  messageIDs,
 		Topic:       clusterTopic,
@@ -485,7 +484,7 @@ func (dt *DependencyTracker) extractMessageIndex(msgID string) int {
 func (dt *DependencyTracker) extractTopic(content string) string {
 	// Simple topic extraction - look for key programming terms
 	content = strings.ToLower(content)
-	
+
 	topics := map[string]string{
 		"function":    "Functions",
 		"class":       "Classes",
@@ -500,13 +499,13 @@ func (dt *DependencyTracker) extractTopic(content string) string {
 		"config":      "Configuration",
 		"deploy":      "Deployment",
 	}
-	
+
 	for keyword, topic := range topics {
 		if strings.Contains(content, keyword) {
 			return topic
 		}
 	}
-	
+
 	return ""
 }
 
@@ -516,7 +515,7 @@ func (dt *DependencyTracker) findMostCommonTopic(topics []string) string {
 	for _, topic := range topics {
 		counts[topic]++
 	}
-	
+
 	maxCount := 0
 	mostCommon := "General Discussion"
 	for topic, count := range counts {
@@ -525,33 +524,33 @@ func (dt *DependencyTracker) findMostCommonTopic(topics []string) string {
 			mostCommon = topic
 		}
 	}
-	
+
 	return mostCommon
 }
 
 // GetDependentMessages returns messages that depend on a given message
 func (dt *DependencyTracker) GetDependentMessages(graph *DependencyGraph, messageID string) []string {
 	var dependents []string
-	
+
 	for _, dep := range graph.Dependencies {
 		if dep.ToMessageID == messageID {
 			dependents = append(dependents, dep.FromMessageID)
 		}
 	}
-	
+
 	return dependents
 }
 
 // GetRequiredMessages returns messages required by a given message
 func (dt *DependencyTracker) GetRequiredMessages(graph *DependencyGraph, messageID string) []string {
 	var required []string
-	
+
 	for _, dep := range graph.Dependencies {
 		if dep.FromMessageID == messageID {
 			required = append(required, dep.ToMessageID)
 		}
 	}
-	
+
 	return required
 }
 
@@ -560,19 +559,19 @@ func (dt *DependencyTracker) SortByDependencies(graph *DependencyGraph) []Conver
 	// Topological sort based on dependencies
 	inDegree := make(map[string]int)
 	adjacency := make(map[string][]string)
-	
+
 	// Initialize
 	for i := range graph.Messages {
 		msgID := fmt.Sprintf("msg_%d", i)
 		inDegree[msgID] = 0
 	}
-	
+
 	// Build graph
 	for _, dep := range graph.Dependencies {
 		adjacency[dep.ToMessageID] = append(adjacency[dep.ToMessageID], dep.FromMessageID)
 		inDegree[dep.FromMessageID]++
 	}
-	
+
 	// Topological sort
 	var queue []string
 	for msgID, degree := range inDegree {
@@ -580,13 +579,13 @@ func (dt *DependencyTracker) SortByDependencies(graph *DependencyGraph) []Conver
 			queue = append(queue, msgID)
 		}
 	}
-	
+
 	var sorted []string
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
 		sorted = append(sorted, current)
-		
+
 		for _, neighbor := range adjacency[current] {
 			inDegree[neighbor]--
 			if inDegree[neighbor] == 0 {
@@ -594,7 +593,7 @@ func (dt *DependencyTracker) SortByDependencies(graph *DependencyGraph) []Conver
 			}
 		}
 	}
-	
+
 	// Convert back to messages
 	var result []ConversationMessage
 	for _, msgID := range sorted {
@@ -602,6 +601,6 @@ func (dt *DependencyTracker) SortByDependencies(graph *DependencyGraph) []Conver
 			result = append(result, graph.Messages[index])
 		}
 	}
-	
+
 	return result
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 )
@@ -16,15 +15,15 @@ type ContextOptimizer struct {
 
 // OptimizationConfig configures context optimization behavior
 type OptimizationConfig struct {
-	RemoveDuplicates     bool    `json:"remove_duplicates"`
+	RemoveDuplicates       bool    `json:"remove_duplicates"`
 	MinSimilarityThreshold float64 `json:"min_similarity_threshold"`
-	RemoveBoilerplate    bool    `json:"remove_boilerplate"`
-	CompressWhitespace   bool    `json:"compress_whitespace"`
-	RemoveComments       bool    `json:"remove_comments"`
-	DeduplicateCode      bool    `json:"deduplicate_code"`
-	MaxLineLength        int     `json:"max_line_length"`
-	PreserveStructure    bool    `json:"preserve_structure"`
-	AggressiveMode       bool    `json:"aggressive_mode"`
+	RemoveBoilerplate      bool    `json:"remove_boilerplate"`
+	CompressWhitespace     bool    `json:"compress_whitespace"`
+	RemoveComments         bool    `json:"remove_comments"`
+	DeduplicateCode        bool    `json:"deduplicate_code"`
+	MaxLineLength          int     `json:"max_line_length"`
+	PreserveStructure      bool    `json:"preserve_structure"`
+	AggressiveMode         bool    `json:"aggressive_mode"`
 }
 
 // DefaultOptimizationConfig returns default optimization settings
@@ -47,7 +46,7 @@ func NewContextOptimizer(config *OptimizationConfig) *ContextOptimizer {
 	if config == nil {
 		config = DefaultOptimizationConfig()
 	}
-	
+
 	return &ContextOptimizer{
 		config: config,
 	}
@@ -55,33 +54,33 @@ func NewContextOptimizer(config *OptimizationConfig) *ContextOptimizer {
 
 // OptimizationResult represents the result of context optimization
 type OptimizationResult struct {
-	OriginalMessages   []ConversationMessage `json:"original_messages"`
-	OptimizedMessages  []ConversationMessage `json:"optimized_messages"`
-	OriginalTokens     int                   `json:"original_tokens"`
-	OptimizedTokens    int                   `json:"optimized_tokens"`
-	CompressionRatio   float64               `json:"compression_ratio"`
-	OptimizationsApplied []string            `json:"optimizations_applied"`
-	ProcessingTime     time.Duration         `json:"processing_time"`
-	Statistics         map[string]interface{} `json:"statistics"`
+	OriginalMessages     []ConversationMessage  `json:"original_messages"`
+	OptimizedMessages    []ConversationMessage  `json:"optimized_messages"`
+	OriginalTokens       int                    `json:"original_tokens"`
+	OptimizedTokens      int                    `json:"optimized_tokens"`
+	CompressionRatio     float64                `json:"compression_ratio"`
+	OptimizationsApplied []string               `json:"optimizations_applied"`
+	ProcessingTime       time.Duration          `json:"processing_time"`
+	Statistics           map[string]interface{} `json:"statistics"`
 }
 
 // OptimizeContext optimizes a conversation context
 func (co *ContextOptimizer) OptimizeContext(messages []ConversationMessage, modelID string) (*OptimizationResult, error) {
 	startTime := time.Now()
-	
+
 	log.Printf("Starting context optimization for %d messages", len(messages))
-	
+
 	// Create a copy to avoid modifying the original
 	optimized := make([]ConversationMessage, len(messages))
 	copy(optimized, messages)
-	
+
 	var optimizationsApplied []string
 	statistics := make(map[string]interface{})
-	
+
 	// Count original tokens
 	tokenCounter := NewTokenCounter()
 	originalTokens := tokenCounter.CountConversationTokens(messages, modelID).TotalTokens
-	
+
 	// Apply optimizations in order
 	if co.config.RemoveDuplicates {
 		before := len(optimized)
@@ -92,7 +91,7 @@ func (co *ContextOptimizer) OptimizeContext(messages []ConversationMessage, mode
 			statistics["duplicates_removed"] = before - after
 		}
 	}
-	
+
 	if co.config.RemoveBoilerplate {
 		before := co.calculateTotalLength(optimized)
 		optimized = co.removeBoilerplate(optimized)
@@ -102,7 +101,7 @@ func (co *ContextOptimizer) OptimizeContext(messages []ConversationMessage, mode
 			statistics["boilerplate_chars_removed"] = before - after
 		}
 	}
-	
+
 	if co.config.CompressWhitespace {
 		before := co.calculateTotalLength(optimized)
 		optimized = co.compressWhitespace(optimized)
@@ -112,7 +111,7 @@ func (co *ContextOptimizer) OptimizeContext(messages []ConversationMessage, mode
 			statistics["whitespace_chars_removed"] = before - after
 		}
 	}
-	
+
 	if co.config.RemoveComments {
 		before := co.calculateTotalLength(optimized)
 		optimized = co.removeComments(optimized)
@@ -122,7 +121,7 @@ func (co *ContextOptimizer) OptimizeContext(messages []ConversationMessage, mode
 			statistics["comment_chars_removed"] = before - after
 		}
 	}
-	
+
 	if co.config.DeduplicateCode {
 		before := co.calculateTotalLength(optimized)
 		optimized = co.deduplicateCodeBlocks(optimized)
@@ -132,24 +131,24 @@ func (co *ContextOptimizer) OptimizeContext(messages []ConversationMessage, mode
 			statistics["code_chars_removed"] = before - after
 		}
 	}
-	
+
 	// Apply content-level optimizations
 	optimized = co.optimizeMessageContent(optimized)
-	
+
 	// Count optimized tokens
 	optimizedTokens := tokenCounter.CountConversationTokens(optimized, modelID).TotalTokens
-	
+
 	// Calculate compression ratio
 	compressionRatio := 1.0
 	if originalTokens > 0 {
 		compressionRatio = float64(optimizedTokens) / float64(originalTokens)
 	}
-	
+
 	processingTime := time.Since(startTime)
-	
-	log.Printf("Context optimization completed: %d -> %d tokens (%.2f%% reduction) in %v", 
+
+	log.Printf("Context optimization completed: %d -> %d tokens (%.2f%% reduction) in %v",
 		originalTokens, optimizedTokens, (1-compressionRatio)*100, processingTime)
-	
+
 	return &OptimizationResult{
 		OriginalMessages:     messages,
 		OptimizedMessages:    optimized,
@@ -166,11 +165,11 @@ func (co *ContextOptimizer) OptimizeContext(messages []ConversationMessage, mode
 func (co *ContextOptimizer) removeDuplicateMessages(messages []ConversationMessage) []ConversationMessage {
 	var result []ConversationMessage
 	seen := make(map[string]bool)
-	
+
 	for _, msg := range messages {
 		// Create a normalized key for comparison
 		key := co.normalizeForComparison(msg.Content)
-		
+
 		if !seen[key] {
 			seen[key] = true
 			result = append(result, msg)
@@ -178,7 +177,7 @@ func (co *ContextOptimizer) removeDuplicateMessages(messages []ConversationMessa
 			log.Printf("Removed duplicate message: %.50s...", msg.Content)
 		}
 	}
-	
+
 	return result
 }
 
@@ -191,66 +190,66 @@ func (co *ContextOptimizer) removeBoilerplate(messages []ConversationMessage) []
 		`(?i)\s*(as you can see|as shown|as mentioned)\s*`,
 		`(?i)\s*(please note|note that|keep in mind)\s*`,
 	}
-	
+
 	var result []ConversationMessage
 	for _, msg := range messages {
 		content := msg.Content
-		
+
 		// Apply boilerplate removal patterns
 		for _, pattern := range boilerplatePatterns {
 			re := regexp.MustCompile(pattern)
 			content = re.ReplaceAllString(content, "")
 		}
-		
+
 		// Only include if there's meaningful content left
 		if strings.TrimSpace(content) != "" {
 			msg.Content = strings.TrimSpace(content)
 			result = append(result, msg)
 		}
 	}
-	
+
 	return result
 }
 
 // compressWhitespace compresses excessive whitespace
 func (co *ContextOptimizer) compressWhitespace(messages []ConversationMessage) []ConversationMessage {
 	var result []ConversationMessage
-	
+
 	for _, msg := range messages {
 		content := msg.Content
-		
+
 		// Replace multiple spaces with single space
 		content = regexp.MustCompile(`\s+`).ReplaceAllString(content, " ")
-		
+
 		// Replace multiple newlines with double newline
 		content = regexp.MustCompile(`\n\s*\n\s*\n+`).ReplaceAllString(content, "\n\n")
-		
+
 		// Trim leading/trailing whitespace
 		content = strings.TrimSpace(content)
-		
+
 		if content != "" {
 			msg.Content = content
 			result = append(result, msg)
 		}
 	}
-	
+
 	return result
 }
 
 // removeComments removes code comments (when enabled)
 func (co *ContextOptimizer) removeComments(messages []ConversationMessage) []ConversationMessage {
 	var result []ConversationMessage
-	
+
 	commentPatterns := []string{
-		`//.*$`,                    // Single-line comments
-		`/\*[\s\S]*?\*/`,          // Multi-line comments
-		`#.*$`,                    // Python/shell comments
-		`<!--[\s\S]*?-->`,         // HTML comments
+		`//.*$`,           // Single-line comments
+		`/\*[\s\S]*?\*/`,  // Multi-line comments
+		`#.*$`,            // Python/shell comments
+		`<!--[\s\S]*?-->`, // HTML comments
 	}
-	
+
 	for _, msg := range messages {
 		content := msg.Content
-		
+
 		// Only remove comments from code blocks
 		if strings.Contains(content, "```") {
 			for _, pattern := range commentPatterns {
@@ -258,11 +257,11 @@ func (co *ContextOptimizer) removeComments(messages []ConversationMessage) []Con
 				content = re.ReplaceAllString(content, "")
 			}
 		}
-		
+
 		msg.Content = content
 		result = append(result, msg)
 	}
-	
+
 	return result
 }
 
@@ -270,14 +269,14 @@ func (co *ContextOptimizer) removeComments(messages []ConversationMessage) []Con
 func (co *ContextOptimizer) deduplicateCodeBlocks(messages []ConversationMessage) []ConversationMessage {
 	var result []ConversationMessage
 	seenCodeBlocks := make(map[string]bool)
-	
+
 	for _, msg := range messages {
 		content := msg.Content
-		
+
 		// Extract code blocks
 		codeBlockPattern := regexp.MustCompile("```[\\s\\S]*?```")
 		codeBlocks := codeBlockPattern.FindAllString(content, -1)
-		
+
 		// Check for duplicates and replace if found
 		for _, block := range codeBlocks {
 			normalized := co.normalizeCodeBlock(block)
@@ -288,38 +287,38 @@ func (co *ContextOptimizer) deduplicateCodeBlocks(messages []ConversationMessage
 				seenCodeBlocks[normalized] = true
 			}
 		}
-		
+
 		msg.Content = content
 		result = append(result, msg)
 	}
-	
+
 	return result
 }
 
 // optimizeMessageContent applies content-level optimizations
 func (co *ContextOptimizer) optimizeMessageContent(messages []ConversationMessage) []ConversationMessage {
 	var result []ConversationMessage
-	
+
 	for _, msg := range messages {
 		content := msg.Content
-		
+
 		// Truncate very long lines if configured
 		if co.config.MaxLineLength > 0 {
 			content = co.truncateLongLines(content, co.config.MaxLineLength)
 		}
-		
+
 		// Remove excessive repetition
 		content = co.removeRepetition(content)
-		
+
 		// Compress verbose explanations in aggressive mode
 		if co.config.AggressiveMode {
 			content = co.compressVerboseContent(content)
 		}
-		
+
 		msg.Content = content
 		result = append(result, msg)
 	}
-	
+
 	return result
 }
 
@@ -327,13 +326,13 @@ func (co *ContextOptimizer) optimizeMessageContent(messages []ConversationMessag
 func (co *ContextOptimizer) normalizeForComparison(text string) string {
 	// Convert to lowercase
 	normalized := strings.ToLower(text)
-	
+
 	// Remove extra whitespace
 	normalized = regexp.MustCompile(`\s+`).ReplaceAllString(normalized, " ")
-	
+
 	// Remove punctuation for comparison
 	normalized = regexp.MustCompile(`[^\w\s]`).ReplaceAllString(normalized, "")
-	
+
 	return strings.TrimSpace(normalized)
 }
 
@@ -341,14 +340,14 @@ func (co *ContextOptimizer) normalizeForComparison(text string) string {
 func (co *ContextOptimizer) normalizeCodeBlock(codeBlock string) string {
 	// Remove language specifier
 	normalized := regexp.MustCompile("```\\w*\\n").ReplaceAllString(codeBlock, "```\n")
-	
+
 	// Remove trailing ```
 	normalized = strings.TrimSuffix(normalized, "```")
 	normalized = strings.TrimPrefix(normalized, "```")
-	
+
 	// Normalize whitespace
 	normalized = regexp.MustCompile(`\s+`).ReplaceAllString(normalized, " ")
-	
+
 	return strings.TrimSpace(normalized)
 }
 
@@ -356,7 +355,7 @@ func (co *ContextOptimizer) normalizeCodeBlock(codeBlock string) string {
 func (co *ContextOptimizer) truncateLongLines(content string, maxLength int) string {
 	lines := strings.Split(content, "\n")
 	var result []string
-	
+
 	for _, line := range lines {
 		if len(line) > maxLength {
 			truncated := line[:maxLength-3] + "..."
@@ -365,7 +364,7 @@ func (co *ContextOptimizer) truncateLongLines(content string, maxLength int) str
 			result = append(result, line)
 		}
 	}
-	
+
 	return strings.Join(result, "\n")
 }
 
@@ -376,14 +375,14 @@ func (co *ContextOptimizer) removeRepetition(content string) string {
 	if len(words) < 4 {
 		return content
 	}
-	
+
 	var result []string
 	for i := 0; i < len(words); i++ {
 		// Check for repeated 3-word phrases
 		if i+5 < len(words) {
 			phrase1 := strings.Join(words[i:i+3], " ")
 			phrase2 := strings.Join(words[i+3:i+6], " ")
-			
+
 			if phrase1 == phrase2 {
 				// Skip the repeated phrase
 				i += 2
@@ -392,7 +391,7 @@ func (co *ContextOptimizer) removeRepetition(content string) string {
 		}
 		result = append(result, words[i])
 	}
-	
+
 	return strings.Join(result, " ")
 }
 
@@ -400,20 +399,20 @@ func (co *ContextOptimizer) removeRepetition(content string) string {
 func (co *ContextOptimizer) compressVerboseContent(content string) string {
 	// Replace verbose phrases with concise alternatives
 	replacements := map[string]string{
-		"in order to":           "to",
-		"due to the fact that":  "because",
-		"at this point in time": "now",
+		"in order to":                  "to",
+		"due to the fact that":         "because",
+		"at this point in time":        "now",
 		"it is important to note that": "note:",
-		"please be aware that": "note:",
-		"it should be mentioned that": "",
+		"please be aware that":         "note:",
+		"it should be mentioned that":  "",
 	}
-	
+
 	result := content
 	for verbose, concise := range replacements {
 		pattern := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(verbose) + `\b`)
 		result = pattern.ReplaceAllString(result, concise)
 	}
-	
+
 	return result
 }
 
@@ -429,7 +428,7 @@ func (co *ContextOptimizer) calculateTotalLength(messages []ConversationMessage)
 // GetOptimizationStats returns optimization statistics
 func (co *ContextOptimizer) GetOptimizationStats(result *OptimizationResult) map[string]interface{} {
 	stats := make(map[string]interface{})
-	
+
 	stats["original_message_count"] = len(result.OriginalMessages)
 	stats["optimized_message_count"] = len(result.OptimizedMessages)
 	stats["messages_removed"] = len(result.OriginalMessages) - len(result.OptimizedMessages)
@@ -437,12 +436,12 @@ func (co *ContextOptimizer) GetOptimizationStats(result *OptimizationResult) map
 	stats["compression_percentage"] = (1 - result.CompressionRatio) * 100
 	stats["processing_time_ms"] = result.ProcessingTime.Milliseconds()
 	stats["optimizations_applied"] = result.OptimizationsApplied
-	
+
 	// Merge in specific statistics
 	for k, v := range result.Statistics {
 		stats[k] = v
 	}
-	
+
 	return stats
 }
 
@@ -450,10 +449,10 @@ func (co *ContextOptimizer) GetOptimizationStats(result *OptimizationResult) map
 func (co *ContextOptimizer) OptimizeForModel(messages []ConversationMessage, modelID string) (*OptimizationResult, error) {
 	// Adjust optimization strategy based on model
 	originalConfig := co.config
-	
+
 	// Create model-specific config
 	modelConfig := *originalConfig
-	
+
 	// Adjust for different model types
 	if strings.Contains(strings.ToLower(modelID), "gpt-4") {
 		// GPT-4 can handle more context, be less aggressive
@@ -464,29 +463,29 @@ func (co *ContextOptimizer) OptimizeForModel(messages []ConversationMessage, mod
 		modelConfig.AggressiveMode = true
 		modelConfig.RemoveComments = true
 	}
-	
+
 	// Temporarily use model-specific config
 	co.config = &modelConfig
 	defer func() { co.config = originalConfig }()
-	
+
 	return co.OptimizeContext(messages, modelID)
 }
 
 // BatchOptimize optimizes multiple conversations
 func (co *ContextOptimizer) BatchOptimize(conversations [][]ConversationMessage, modelID string) ([]*OptimizationResult, error) {
 	var results []*OptimizationResult
-	
+
 	for i, messages := range conversations {
 		log.Printf("Optimizing conversation %d/%d", i+1, len(conversations))
-		
+
 		result, err := co.OptimizeContext(messages, modelID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to optimize conversation %d: %w", i, err)
 		}
-		
+
 		results = append(results, result)
 	}
-	
+
 	return results, nil
 }
 

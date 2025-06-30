@@ -10,11 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/entrepeneur4lyf/codeforge/internal/app"
 	"github.com/entrepeneur4lyf/codeforge/internal/builder"
 	"github.com/entrepeneur4lyf/codeforge/internal/config"
 	"github.com/entrepeneur4lyf/codeforge/internal/embeddings"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
 	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
+	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -26,6 +28,7 @@ type Server struct {
 	upgrader websocket.Upgrader
 	config   *config.Config
 	clients  map[*websocket.Conn]bool
+	app      *app.App // Integrated CodeForge application
 }
 
 // APIResponse represents a standard API response
@@ -107,6 +110,28 @@ func NewServer(cfg *config.Config) *Server {
 		upgrader: upgrader,
 		config:   cfg,
 		clients:  make(map[*websocket.Conn]bool),
+	}
+
+	server.setupRoutes()
+	return server
+}
+
+// NewServerWithApp creates a new web server with integrated CodeForge app
+func NewServerWithApp(cfg *config.Config, codeforgeApp *app.App) *Server {
+	router := mux.NewRouter()
+
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Allow all origins for development
+		},
+	}
+
+	server := &Server{
+		router:   router,
+		upgrader: upgrader,
+		config:   cfg,
+		clients:  make(map[*websocket.Conn]bool),
+		app:      codeforgeApp,
 	}
 
 	server.setupRoutes()
@@ -1316,6 +1341,22 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Use integrated app if available
+	if s.app != nil {
+		response, err := s.app.ProcessChatMessage(ctx, "web-session", req.Message, req.Model)
+		if err != nil {
+			s.sendError(w, fmt.Sprintf("AI completion failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		s.sendSuccess(w, map[string]interface{}{
+			"message": response,
+			"model":   req.Model,
+		})
+		return
+	}
+
+	// Fallback to direct LLM integration
 	// Get the default model
 	defaultModel := llm.GetDefaultModel()
 
@@ -1369,19 +1410,70 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 
 		switch req.Operation {
 		case "read":
-			content, err := s.readFile(req.Path)
-			if err != nil {
-				s.sendError(w, fmt.Sprintf("Failed to read file: %v", err), http.StatusInternalServerError)
-				return
+			// Use integrated file operations if app is available
+			if s.app != nil && s.app.FileOperationManager != nil {
+				ctx := r.Context()
+				fileReq := &permissions.FileOperationRequest{
+					SessionID: "web-session",
+					Operation: "read",
+					Path:      req.Path,
+					Context:   map[string]interface{}{"source": "web"},
+				}
+
+				result, err := s.app.FileOperationManager.ReadFile(ctx, fileReq)
+				if err != nil {
+					s.sendError(w, fmt.Sprintf("Failed to read file: %v", err), http.StatusInternalServerError)
+					return
+				}
+
+				if !result.Success {
+					s.sendError(w, result.Error, http.StatusForbidden)
+					return
+				}
+
+				s.sendSuccess(w, map[string]string{"content": string(result.Content)})
+			} else {
+				// Fallback to direct file reading
+				content, err := s.readFile(req.Path)
+				if err != nil {
+					s.sendError(w, fmt.Sprintf("Failed to read file: %v", err), http.StatusInternalServerError)
+					return
+				}
+				s.sendSuccess(w, map[string]string{"content": content})
 			}
-			s.sendSuccess(w, map[string]string{"content": content})
 
 		case "write":
-			if err := s.writeFile(req.Path, req.Content); err != nil {
-				s.sendError(w, fmt.Sprintf("Failed to write file: %v", err), http.StatusInternalServerError)
-				return
+			// Use integrated file operations if app is available
+			if s.app != nil && s.app.FileOperationManager != nil {
+				ctx := r.Context()
+				fileReq := &permissions.FileOperationRequest{
+					SessionID: "web-session",
+					Operation: "write",
+					Path:      req.Path,
+					Content:   []byte(req.Content),
+					Context:   map[string]interface{}{"source": "web"},
+				}
+
+				result, err := s.app.FileOperationManager.WriteFile(ctx, fileReq)
+				if err != nil {
+					s.sendError(w, fmt.Sprintf("Failed to write file: %v", err), http.StatusInternalServerError)
+					return
+				}
+
+				if !result.Success {
+					s.sendError(w, result.Error, http.StatusForbidden)
+					return
+				}
+
+				s.sendSuccess(w, map[string]string{"status": "saved"})
+			} else {
+				// Fallback to direct file writing
+				if err := s.writeFile(req.Path, req.Content); err != nil {
+					s.sendError(w, fmt.Sprintf("Failed to write file: %v", err), http.StatusInternalServerError)
+					return
+				}
+				s.sendSuccess(w, map[string]string{"status": "saved"})
 			}
-			s.sendSuccess(w, map[string]string{"status": "saved"})
 
 		default:
 			s.sendError(w, "Unknown file operation", http.StatusBadRequest)

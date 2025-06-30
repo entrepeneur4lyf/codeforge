@@ -1,14 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 
-	"github.com/entrepeneur4lyf/codeforge/internal/config"
-	"github.com/entrepeneur4lyf/codeforge/internal/mcp"
-	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
+	"github.com/entrepeneur4lyf/codeforge/internal/app"
 	"github.com/spf13/cobra"
 )
 
@@ -86,21 +85,27 @@ var mcpServerCmd = &cobra.Command{
 			return fmt.Errorf("failed to create .codeforge directory: %w", err)
 		}
 
-		// Load configuration
-		cfg, err := config.Load(absWorkspace, false)
+		// Create application with all systems integrated
+		appConfig := &app.AppConfig{
+			WorkspaceRoot:     absWorkspace,
+			DatabasePath:      dbPath,
+			EnablePermissions: true,
+			EnableContextMgmt: true,
+			Debug:             false,
+		}
+
+		ctx := context.Background()
+		codeforgeApp, err := app.NewApp(ctx, appConfig)
 		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
+			return fmt.Errorf("failed to initialize CodeForge app: %w", err)
 		}
+		defer codeforgeApp.Close()
 
-		// Initialize vector database
-		if err := vectordb.Initialize(cfg); err != nil {
-			return fmt.Errorf("failed to initialize vector database: %w", err)
+		// Get the integrated MCP server
+		mcpServer := codeforgeApp.MCPServer
+		if mcpServer == nil {
+			return fmt.Errorf("MCP server not available in app")
 		}
-		vdb := vectordb.Get()
-		defer vdb.Close()
-
-		// Create MCP server
-		mcpServer := mcp.NewCodeForgeServer(cfg, vdb, absWorkspace)
 
 		log.Printf("Starting CodeForge MCP server...")
 		log.Printf("Workspace: %s", absWorkspace)

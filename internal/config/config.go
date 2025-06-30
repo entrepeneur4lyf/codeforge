@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/models"
 	"github.com/spf13/viper"
@@ -101,6 +102,18 @@ type MCPConfig struct {
 	Enabled     bool              `json:"enabled"`
 }
 
+// PermissionConfig defines permission system configuration
+type PermissionConfig struct {
+	Enabled              bool   `json:"enabled"`              // Enable permission system
+	RequireApproval      bool   `json:"requireApproval"`      // Require approval for operations
+	AutoApproveThreshold int    `json:"autoApproveThreshold"` // Trust level threshold for auto-approval
+	MaxPerSession        int    `json:"maxPerSession"`        // Maximum permissions per session
+	AuditEnabled         bool   `json:"auditEnabled"`         // Enable audit logging
+	DefaultExpiration    string `json:"defaultExpiration"`    // Default permission expiration (e.g., "24h")
+	CleanupInterval      string `json:"cleanupInterval"`      // Cleanup interval (e.g., "1h")
+	DatabasePath         string `json:"databasePath"`         // Path to permission database
+}
+
 // Config is the main configuration structure for the application
 type Config struct {
 	Data         Data                              `json:"data"`
@@ -119,6 +132,7 @@ type Config struct {
 	AutoCompact  bool                              `json:"autoCompact,omitempty"`
 	Models       map[string]ModelConfig            `json:"models,omitempty"` // Model-specific configurations
 	Context      ContextConfig                     `json:"context"`          // Context management configuration
+	Permissions  PermissionConfig                  `json:"permissions"`      // Permission system configuration
 }
 
 // Application constants
@@ -198,6 +212,16 @@ func setDefaults(debug bool) {
 	// Context management defaults
 	viper.SetDefault("context.autoSummarize", true)
 	viper.SetDefault("context.slidingWindow", true)
+
+	// Permission system defaults
+	viper.SetDefault("permissions.enabled", true)
+	viper.SetDefault("permissions.requireApproval", true)
+	viper.SetDefault("permissions.autoApproveThreshold", 80)
+	viper.SetDefault("permissions.maxPerSession", 100)
+	viper.SetDefault("permissions.auditEnabled", true)
+	viper.SetDefault("permissions.defaultExpiration", "24h")
+	viper.SetDefault("permissions.cleanupInterval", "1h")
+	viper.SetDefault("permissions.databasePath", "")
 	viper.SetDefault("context.windowOverlap", 200)
 	viper.SetDefault("context.cacheEnabled", true)
 	viper.SetDefault("context.cacheTTL", 3600) // 1 hour
@@ -455,4 +479,44 @@ func GetAgent(agent AgentName) (Agent, bool) {
 	}
 	agentCfg, exists := cfg.Agents[agent]
 	return agentCfg, exists
+}
+
+// Helper methods for accessing configuration values with defaults
+
+// GetString returns a string configuration value with a default
+func (c *Config) GetString(key, defaultValue string) string {
+	if viper.IsSet(key) {
+		return viper.GetString(key)
+	}
+	return defaultValue
+}
+
+// GetInt returns an integer configuration value with a default
+func (c *Config) GetInt(key string, defaultValue int) int {
+	if viper.IsSet(key) {
+		return viper.GetInt(key)
+	}
+	return defaultValue
+}
+
+// GetBool returns a boolean configuration value with a default
+func (c *Config) GetBool(key string, defaultValue bool) bool {
+	if viper.IsSet(key) {
+		return viper.GetBool(key)
+	}
+	return defaultValue
+}
+
+// GetDuration returns a duration configuration value with a default
+func (c *Config) GetDuration(key, defaultValue string) time.Duration {
+	if viper.IsSet(key) {
+		return viper.GetDuration(key)
+	}
+	duration, _ := time.ParseDuration(defaultValue)
+	return duration
+}
+
+// GetPermissionConfig returns the permission system configuration
+func (c *Config) GetPermissionConfig() PermissionConfig {
+	return c.Permissions
 }
