@@ -1,0 +1,65 @@
+# CodeForge Configuration
+working_dir: "."
+
+# Language Server Protocol Configuration
+lsp:
+  go:
+    command: ["gopls"]
+    args: ["serve"]
+    env: {}
+
+  rust:
+    command: ["rust-analyzer"]
+    args: []
+    env: {}
+
+  python:
+    command: ["pylsp"]
+    args: []
+    env: {}
+
+# Model Context Protocol Configuration
+mcp:
+  filesystem:
+    command: ["npx", "@modelcontextprotocol/server-filesystem"]
+    args: ["/tmp"]
+    description: "File system access tool"
+    enabled: true
+    env: {}
+
+  git:
+    command: ["npx", "@modelcontextprotocol/server-git"]
+    args: []
+    description: "Git repository operations"
+    enabled: false
+    env: {}
+
+# LLM Provider Configuration (using OpenCode patterns)
+llm:
+  providers:
+    - name: "anthropic"
+      type: "anthropic"
+      api_key_env: "ANTHROPIC_API_KEY"
+      models:
+        - "claude-3-5-sonnet-20241022"
+        - "claude-3-5-haiku-20241022"
+      
+    - name: "openai"
+      type: "openai"
+      api_key_env: "OPENAI_API_KEY"
+      models:
+        - "gpt-4o"
+        - "gpt-4o-mini"
+
+# Vector Database Configuration
+vector_db:
+  path: ".codeforge/vectors.db"
+  embedding_dimension: 1536
+
+# Build Configuration
+build:
+  cache_dir: ".codeforge/cache"
+  
+# Debug Settings
+debug: false
+debug_lsp: false
