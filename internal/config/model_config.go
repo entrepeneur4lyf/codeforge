@@ -221,16 +221,18 @@ func (mcm *ModelConfigManager) IsWithinBudget(modelID models.ModelID, estimatedC
 
 	// Check hourly budget
 	if config.CostBudgetPerHour > 0 {
-		// This would need to track hourly spending - simplified for now
-		if estimatedCost > config.CostBudgetPerHour {
+		// Calculate current hourly spending for this model
+		hourlySpending := mcm.calculateHourlySpending(modelID)
+		if (hourlySpending + estimatedCost) > config.CostBudgetPerHour {
 			return false
 		}
 	}
 
 	// Check daily budget
 	if config.CostBudgetPerDay > 0 {
-		// This would need to track daily spending - simplified for now
-		if estimatedCost > config.CostBudgetPerDay {
+		// Calculate current daily spending for this model
+		dailySpending := mcm.calculateDailySpending(modelID)
+		if (dailySpending + estimatedCost) > config.CostBudgetPerDay {
 			return false
 		}
 	}
@@ -321,6 +323,41 @@ func (mcm *ModelConfigManager) getDefaultConfig(modelID models.ModelID) *Enhance
 	mcm.setModelSpecificDefaults(config, model)
 
 	return config
+}
+
+// calculateHourlySpending calculates spending for a model in the last hour
+func (mcm *ModelConfigManager) calculateHourlySpending(modelID models.ModelID) float64 {
+	mcm.mu.RLock()
+	defer mcm.mu.RUnlock()
+
+	config := mcm.GetModelConfig(modelID)
+
+	// In a production system, this would query actual usage records from the last hour
+	// For now, we'll estimate based on recent performance metrics
+
+	// Estimate hourly requests as a fraction of total requests
+	hourlyRequestEstimate := float64(config.Performance.TotalRequests) * 0.04 // ~1/24th for hourly
+	avgCost := (config.CostPer1KInput + config.CostPer1KOutput) / 2
+	totalSpending := hourlyRequestEstimate * avgCost
+
+	return totalSpending
+}
+
+// calculateDailySpending calculates spending for a model in the last 24 hours
+func (mcm *ModelConfigManager) calculateDailySpending(modelID models.ModelID) float64 {
+	mcm.mu.RLock()
+	defer mcm.mu.RUnlock()
+
+	config := mcm.GetModelConfig(modelID)
+
+	// In a production system, this would query actual usage records from the last 24 hours
+	// For now, we'll use the total cost from performance metrics as a proxy
+
+	// Use the total cost tracked in performance metrics
+	// In a real system, this would be filtered to the last 24 hours
+	totalSpending := config.Performance.TotalCost
+
+	return totalSpending
 }
 
 // inferCapabilities infers capabilities from model features
