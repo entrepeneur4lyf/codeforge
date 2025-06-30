@@ -458,7 +458,8 @@ func (ct *CostTracker) checkBudgetAlerts(_ TokenUsageRecord) {
 			if (alert.Threshold > 0 && currentSpending >= alert.Threshold) ||
 				(alert.ThresholdPercent > 0 && percentage >= alert.ThresholdPercent) {
 
-				// Trigger alert (simplified - would send notifications in real implementation)
+				// Trigger alert - log and update timestamp
+				ct.logBudgetAlert(alert, currentSpending, percentage)
 				alert.LastTriggered = time.Now()
 			}
 		}
@@ -545,4 +546,12 @@ func (ct *CostTracker) analyzeProviderUsage(summary *CostSummary) []CostOptimiza
 	}
 
 	return recommendations
+}
+
+// logBudgetAlert logs a budget alert when triggered
+func (ct *CostTracker) logBudgetAlert(alert *BudgetAlert, currentSpending, percentage float64) {
+	// In a production system, this would send notifications via email, Slack, etc.
+	// For now, we'll use structured logging
+	fmt.Printf("BUDGET ALERT: %s - Current spending: $%.4f (%.1f%% of budget)\n",
+		alert.Name, currentSpending, percentage)
 }
