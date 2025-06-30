@@ -39,17 +39,17 @@ type GitCommit struct {
 
 // GitDiff represents a git diff
 type GitDiff struct {
-	FilePath    string `json:"file_path"`
-	OldPath     string `json:"old_path,omitempty"`
-	Status      string `json:"status"` // A, M, D, R, C
-	Additions   int    `json:"additions"`
-	Deletions   int    `json:"deletions"`
-	Content     string `json:"content"`
-	IsBinary    bool   `json:"is_binary"`
-	IsRenamed   bool   `json:"is_renamed"`
-	IsNewFile   bool   `json:"is_new_file"`
-	IsDeleted   bool   `json:"is_deleted"`
-	Similarity  int    `json:"similarity,omitempty"` // For renames/copies
+	FilePath   string `json:"file_path"`
+	OldPath    string `json:"old_path,omitempty"`
+	Status     string `json:"status"` // A, M, D, R, C
+	Additions  int    `json:"additions"`
+	Deletions  int    `json:"deletions"`
+	Content    string `json:"content"`
+	IsBinary   bool   `json:"is_binary"`
+	IsRenamed  bool   `json:"is_renamed"`
+	IsNewFile  bool   `json:"is_new_file"`
+	IsDeleted  bool   `json:"is_deleted"`
+	Similarity int    `json:"similarity,omitempty"` // For renames/copies
 }
 
 // Repository represents a git repository
@@ -70,12 +70,12 @@ func (r *Repository) IsGitRepository() bool {
 	if stat, err := os.Stat(gitDir); err == nil {
 		return stat.IsDir()
 	}
-	
+
 	// Check if it's a git file (for worktrees)
 	if _, err := os.Stat(gitDir); err == nil {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -128,7 +128,7 @@ func (r *Repository) GetStatus(ctx context.Context) (*GitStatus, error) {
 func (r *Repository) getCurrentBranch(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "branch", "--show-current")
 	cmd.Dir = r.workingDir
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		// Fallback to symbolic-ref for older git versions
@@ -139,7 +139,7 @@ func (r *Repository) getCurrentBranch(ctx context.Context) (string, error) {
 			return "HEAD", nil // Detached HEAD state
 		}
 	}
-	
+
 	return strings.TrimSpace(string(output)), nil
 }
 
@@ -147,7 +147,7 @@ func (r *Repository) getCurrentBranch(ctx context.Context) (string, error) {
 func (r *Repository) getPortcelainStatus(ctx context.Context, status *GitStatus) error {
 	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
 	cmd.Dir = r.workingDir
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return err
@@ -213,7 +213,7 @@ func (r *Repository) getPortcelainStatus(ctx context.Context, status *GitStatus)
 func (r *Repository) getAheadBehind(ctx context.Context, status *GitStatus) error {
 	cmd := exec.CommandContext(ctx, "git", "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
 	cmd.Dir = r.workingDir
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return err // No upstream or other error
@@ -236,7 +236,7 @@ func (r *Repository) getAheadBehind(ctx context.Context, status *GitStatus) erro
 func (r *Repository) getLastCommit(ctx context.Context) (*GitCommit, error) {
 	cmd := exec.CommandContext(ctx, "git", "log", "-1", "--format=%H%n%h%n%s%n%an%n%ad%n%b", "--date=iso")
 	cmd.Dir = r.workingDir
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -411,7 +411,7 @@ func parseIntSafe(s string) (int, error) {
 	if s == "" {
 		return 0, nil
 	}
-	
+
 	var result int
 	for _, r := range s {
 		if r < '0' || r > '9' {
@@ -419,6 +419,6 @@ func parseIntSafe(s string) (int, error) {
 		}
 		result = result*10 + int(r-'0')
 	}
-	
+
 	return result, nil
 }

@@ -398,8 +398,8 @@ func (h *AnthropicHandler) processStream(reader io.Reader, streamChan chan<- llm
 	for scanner.Scan() {
 		event := scanner.Event()
 
-		// Skip non-data events
-		if event.Type != "data" {
+		// Skip ping events and empty events
+		if event.Type == "ping" || event.Type == "" {
 			continue
 		}
 
@@ -473,6 +473,10 @@ func (s *SSEScanner) Scan() bool {
 		s.index++
 		return true
 	}
+
+	// Clear processed events and reset index
+	s.events = s.events[:0]
+	s.index = 0
 
 	// Read more data
 	n, err := s.reader.Read(s.buffer)

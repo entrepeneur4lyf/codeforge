@@ -9,6 +9,7 @@ import (
 
 	"github.com/entrepeneur4lyf/codeforge/internal/builder"
 	"github.com/entrepeneur4lyf/codeforge/internal/embeddings"
+	"github.com/entrepeneur4lyf/codeforge/internal/git"
 	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
 	"github.com/entrepeneur4lyf/codeforge/internal/ml"
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
@@ -26,7 +27,7 @@ func NewCommandRouter(workingDir string) *CommandRouter {
 	}
 }
 
-// RouteDirectCommand handles commands that should be executed directly (build, file ops)
+// RouteDirectCommand handles commands that should be executed directly (build, file ops, git)
 func (cr *CommandRouter) RouteDirectCommand(ctx context.Context, userInput string) (string, bool) {
 	input := strings.ToLower(strings.TrimSpace(userInput))
 
@@ -40,8 +41,78 @@ func (cr *CommandRouter) RouteDirectCommand(ctx context.Context, userInput strin
 		return cr.handleFileCommand(ctx, userInput)
 	}
 
+	// Git AI commit commands - these are direct actions
+	if cr.isGitCommitCommand(input) {
+		return cr.handleGitCommitCommand(ctx, userInput)
+	}
+
 	// Not a direct command
 	return "", false
+}
+
+// Git commit command detection and handling
+func (cr *CommandRouter) isGitCommitCommand(input string) bool {
+	gitCommitKeywords := []string{
+		"commit", "git commit", "ai commit", "smart commit", "auto commit",
+		"generate commit", "commit message", "commit with ai", "ai commit message",
+	}
+
+	for _, keyword := range gitCommitKeywords {
+		if strings.Contains(input, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func (cr *CommandRouter) handleGitCommitCommand(ctx context.Context, userInput string) (string, bool) {
+	input := strings.ToLower(strings.TrimSpace(userInput))
+
+	// Create git repository instance
+	repo := git.NewRepository(cr.workingDir)
+
+	// Check if git is available and this is a git repository
+	if !git.IsGitInstalled() {
+		return "❌ Git is not installed on this system", true
+	}
+
+	if !repo.IsGitRepository() {
+		return "❌ This directory is not a git repository", true
+	}
+
+	// Determine if user wants to commit staged changes only
+	staged := strings.Contains(input, "staged") || strings.Contains(input, "index")
+
+	// Check if user just wants to generate a message without committing
+	generateOnly := strings.Contains(input, "generate") || strings.Contains(input, "message only") || strings.Contains(input, "preview")
+
+	if generateOnly {
+		// Generate commit message without committing
+		generator, err := git.NewCommitMessageGenerator()
+		if err != nil {
+			return fmt.Sprintf("❌ Failed to create commit message generator: %v", err), true
+		}
+
+		commitMessage, err := generator.GenerateCommitMessage(ctx, repo, staged)
+		if err != nil {
+			return fmt.Sprintf("❌ Failed to generate commit message: %v", err), true
+		}
+
+		return fmt.Sprintf("🤖 Generated commit message:\n\n%s\n\n💡 To commit with this message, say 'commit' or 'git commit'", commitMessage), true
+	}
+
+	// Commit with AI-generated message
+	commitMessage, err := repo.CommitWithAIMessage(ctx, staged)
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to commit with AI message: %v", err), true
+	}
+
+	stagedText := ""
+	if staged {
+		stagedText = " (staged changes only)"
+	}
+
+	return fmt.Sprintf("✅ Successfully committed%s with AI-generated message:\n\n%s", stagedText, commitMessage), true
 }
 
 // GatherContext collects relevant context using ML-powered code intelligence

@@ -26,6 +26,90 @@ type textSearchResult struct {
 
 // Tool Handlers
 
+// handleGitCommitAI handles AI-powered git commit requests
+func (cfs *CodeForgeServer) handleGitCommitAI(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	staged := false
+	if args, ok := request.Params.Arguments.(map[string]interface{}); ok {
+		if val, ok := args["staged"].(bool); ok {
+			staged = val
+		}
+	}
+
+	// Create git repository instance
+	repo := git.NewRepository(cfs.workspaceRoot)
+
+	// Check if git is available and this is a git repository
+	if !git.IsGitInstalled() {
+		return mcp.NewToolResultError("Git is not installed"), nil
+	}
+
+	if !repo.IsGitRepository() {
+		return mcp.NewToolResultError("Not a git repository"), nil
+	}
+
+	// Generate and commit with AI message
+	commitMessage, err := repo.CommitWithAIMessage(ctx, staged)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to commit with AI message: %v", err)), nil
+	}
+
+	// Format results
+	result := map[string]interface{}{
+		"success":        true,
+		"commit_message": commitMessage,
+		"staged":         staged,
+		"message":        fmt.Sprintf("Successfully committed with AI-generated message: %s", commitMessage),
+	}
+
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleGitGenerateCommitMessage handles AI commit message generation without committing
+func (cfs *CodeForgeServer) handleGitGenerateCommitMessage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	staged := false
+	if args, ok := request.Params.Arguments.(map[string]interface{}); ok {
+		if val, ok := args["staged"].(bool); ok {
+			staged = val
+		}
+	}
+
+	// Create git repository instance
+	repo := git.NewRepository(cfs.workspaceRoot)
+
+	// Check if git is available and this is a git repository
+	if !git.IsGitInstalled() {
+		return mcp.NewToolResultError("Git is not installed"), nil
+	}
+
+	if !repo.IsGitRepository() {
+		return mcp.NewToolResultError("Not a git repository"), nil
+	}
+
+	// Create commit message generator
+	generator, err := git.NewCommitMessageGenerator()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to create commit message generator: %v", err)), nil
+	}
+
+	// Generate commit message
+	commitMessage, err := generator.GenerateCommitMessage(ctx, repo, staged)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to generate commit message: %v", err)), nil
+	}
+
+	// Format results
+	result := map[string]interface{}{
+		"success":        true,
+		"commit_message": commitMessage,
+		"staged":         staged,
+		"message":        "AI-generated commit message ready",
+	}
+
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
 // handleSemanticSearch handles semantic code search requests
 func (cfs *CodeForgeServer) handleSemanticSearch(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, err := request.RequireString("query")

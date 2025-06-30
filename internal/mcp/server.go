@@ -200,6 +200,26 @@ func (cfs *CodeForgeServer) registerTools() {
 	)
 
 	cfs.server.AddTool(gitDiffTool, cfs.handleGitDiff)
+
+	// AI-powered git commit tool
+	gitCommitAITool := mcp.NewTool("git_commit_ai",
+		mcp.WithDescription("Generate an AI-powered commit message and commit changes"),
+		mcp.WithBoolean("staged",
+			mcp.Description("Commit only staged changes (default: false - commits all changes)"),
+		),
+	)
+
+	cfs.server.AddTool(gitCommitAITool, cfs.handleGitCommitAI)
+
+	// AI commit message generation tool
+	gitGenerateCommitMessageTool := mcp.NewTool("git_generate_commit_message",
+		mcp.WithDescription("Generate an AI-powered commit message without committing"),
+		mcp.WithBoolean("staged",
+			mcp.Description("Generate message for staged changes (default: false - analyzes all changes)"),
+		),
+	)
+
+	cfs.server.AddTool(gitGenerateCommitMessageTool, cfs.handleGitGenerateCommitMessage)
 }
 
 // registerResources registers all CodeForge resources

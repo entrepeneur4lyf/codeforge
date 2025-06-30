@@ -464,6 +464,16 @@ func (cs *ChatSession) showHelp() {
 	fmt.Println("  /exit      - Exit the chat session")
 	fmt.Println("  exit       - Exit the chat session")
 	fmt.Println("  quit       - Exit the chat session")
+	fmt.Println()
+	fmt.Println("Natural language commands:")
+	fmt.Println("  'build' or 'compile' - Build the project")
+	fmt.Println("  'search for X' - Semantic code search")
+	fmt.Println("  'find definition of X' - LSP-powered symbol lookup")
+	fmt.Println("  'find references to X' - Find all symbol references")
+	fmt.Println("  'commit' or 'git commit' - AI-powered commit with generated message")
+	fmt.Println("  'generate commit message' - Generate commit message without committing")
+	fmt.Println("  'commit staged' - Commit only staged changes with AI message")
+	fmt.Println()
 }
 
 // selectEmbedding allows user to select embedding provider
