@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -472,7 +473,7 @@ func (tcm *ToolConfigManager) checkRateLimit(toolID string) bool {
 	now := time.Now()
 
 	// Check requests per minute limit
-	if config.Limits.RequestsPerMinute > 0 {
+	if config.Limits.RateLimitPerMinute > 0 {
 		minuteAgo := now.Add(-time.Minute)
 		recentRequests := 0
 
@@ -482,13 +483,13 @@ func (tcm *ToolConfigManager) checkRateLimit(toolID string) bool {
 			}
 		}
 
-		if recentRequests >= config.Limits.RequestsPerMinute {
+		if recentRequests >= config.Limits.RateLimitPerMinute {
 			return false
 		}
 	}
 
 	// Check requests per hour limit
-	if config.Limits.RequestsPerHour > 0 {
+	if config.Limits.RateLimitPerHour > 0 {
 		hourAgo := now.Add(-time.Hour)
 		recentRequests := 0
 
@@ -498,7 +499,7 @@ func (tcm *ToolConfigManager) checkRateLimit(toolID string) bool {
 			}
 		}
 
-		if recentRequests >= config.Limits.RequestsPerHour {
+		if recentRequests >= config.Limits.RateLimitPerHour {
 			return false
 		}
 	}
@@ -518,9 +519,101 @@ func (tcm *ToolConfigManager) checkDependencies(config *EnhancedToolConfig) erro
 }
 
 // validatePermissions validates tool permissions for an operation
-func (tcm *ToolConfigManager) validatePermissions(_ *EnhancedToolConfig, _ map[string]any) error {
-	// This would implement detailed permission checking based on the operation
-	// Simplified for now
+func (tcm *ToolConfigManager) validatePermissions(config *EnhancedToolConfig, params map[string]any) error {
+	if !config.Enabled {
+		return fmt.Errorf("tool is disabled")
+	}
+
+	// Check security level requirements
+	if config.SecurityLevel == SecurityLevelDangerous {
+		// Require explicit confirmation for dangerous operations
+		if confirmed, ok := params["confirm_dangerous"]; !ok || confirmed != true {
+			return fmt.Errorf("dangerous operation requires explicit confirmation")
+		}
+	}
+
+	// Validate file system permissions
+	if config.Permissions.CanRead || config.Permissions.CanWrite {
+		if path, ok := params["path"].(string); ok {
+			// Check if path is within allowed directories
+			if len(config.Permissions.AllowedPaths) > 0 {
+				allowed := false
+				for _, allowedPath := range config.Permissions.AllowedPaths {
+					if strings.HasPrefix(path, allowedPath) {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					return fmt.Errorf("path %s not in allowed paths", path)
+				}
+			}
+
+			// Check for forbidden paths
+			for _, forbiddenPath := range config.Permissions.ForbiddenPaths {
+				if strings.HasPrefix(path, forbiddenPath) {
+					return fmt.Errorf("path %s is forbidden", path)
+				}
+			}
+		}
+	}
+
+	// Validate network permissions
+	if config.Permissions.CanMakeNetworkCalls {
+		if url, ok := params["url"].(string); ok {
+			// Check allowed domains
+			if len(config.Permissions.AllowedDomains) > 0 {
+				allowed := false
+				for _, domain := range config.Permissions.AllowedDomains {
+					if strings.Contains(url, domain) {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					return fmt.Errorf("domain not in allowed list")
+				}
+			}
+
+			// Check forbidden domains
+			for _, forbiddenDomain := range config.Permissions.ForbiddenDomains {
+				if strings.Contains(url, forbiddenDomain) {
+					return fmt.Errorf("domain %s is forbidden", forbiddenDomain)
+				}
+			}
+		}
+	} else if _, hasURL := params["url"]; hasURL {
+		return fmt.Errorf("network access not permitted for this tool")
+	}
+
+	// Validate system command permissions
+	if config.Permissions.CanRunCommands {
+		if command, ok := params["command"].(string); ok {
+			// Check allowed commands
+			if len(config.Permissions.AllowedCommands) > 0 {
+				allowed := false
+				for _, allowedCmd := range config.Permissions.AllowedCommands {
+					if strings.HasPrefix(command, allowedCmd) {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					return fmt.Errorf("command %s not in allowed list", command)
+				}
+			}
+
+			// Check forbidden commands
+			for _, forbiddenCmd := range config.Permissions.ForbiddenCommands {
+				if strings.Contains(command, forbiddenCmd) {
+					return fmt.Errorf("command contains forbidden term: %s", forbiddenCmd)
+				}
+			}
+		}
+	} else if _, hasCommand := params["command"]; hasCommand {
+		return fmt.Errorf("system command execution not permitted for this tool")
+	}
+
 	return nil
 }
 
