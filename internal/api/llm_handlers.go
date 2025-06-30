@@ -285,67 +285,40 @@ func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	providerID := vars["provider"]
 
-	// TODO: Get actual models for the provider
+	// Get actual models for the provider using existing getter functions
 	var models []LLMModel
 
 	switch providerID {
 	case "anthropic":
-		models = []LLMModel{
-			{
-				ID:           "claude-3-5-sonnet-20241022",
-				Name:         "Claude 3.5 Sonnet",
-				Provider:     "anthropic",
-				Description:  "Most intelligent model for complex reasoning",
-				ContextSize:  200000,
-				Capabilities: []string{"text", "code", "analysis", "reasoning"},
-			},
-			{
-				ID:           "claude-3-haiku-20240307",
-				Name:         "Claude 3 Haiku",
-				Provider:     "anthropic",
-				Description:  "Fastest model for simple tasks",
-				ContextSize:  200000,
-				Capabilities: []string{"text", "code", "speed"},
-			},
-		}
+		models = s.getAnthropicModels()
 	case "openai":
-		models = []LLMModel{
-			{
-				ID:           "gpt-4o",
-				Name:         "GPT-4o",
-				Provider:     "openai",
-				Description:  "Multimodal flagship model",
-				ContextSize:  128000,
-				Capabilities: []string{"text", "code", "vision", "audio"},
-			},
-			{
-				ID:           "gpt-4o-mini",
-				Name:         "GPT-4o Mini",
-				Provider:     "openai",
-				Description:  "Affordable and intelligent small model",
-				ContextSize:  128000,
-				Capabilities: []string{"text", "code", "speed"},
-			},
-		}
+		models = s.getOpenAIModels()
 	case "openrouter":
-		models = []LLMModel{
-			{
-				ID:           "anthropic/claude-3.5-sonnet",
-				Name:         "Claude 3.5 Sonnet",
-				Provider:     "openrouter",
-				Description:  "Claude 3.5 Sonnet via OpenRouter",
-				ContextSize:  200000,
-				Capabilities: []string{"text", "code", "analysis"},
-			},
-			{
-				ID:           "openai/gpt-4o",
-				Name:         "GPT-4o",
-				Provider:     "openrouter",
-				Description:  "GPT-4o via OpenRouter",
-				ContextSize:  128000,
-				Capabilities: []string{"text", "code", "vision"},
-			},
+		models = s.getOpenRouterModels()
+	case "gemini":
+		models = s.getGeminiModels()
+	case "groq":
+		models = s.getGroqModels()
+	case "mistral":
+		models = s.getMistralModels()
+	case "together":
+		models = s.getTogetherModels()
+	case "fireworks":
+		models = s.getFireworksModels()
+	case "deepseek":
+		models = s.getDeepSeekModels()
+	case "cohere":
+		models = s.getCohereModels()
+	case "perplexity":
+		models = s.getPerplexityModels()
+	case "replicate":
+		models = s.getReplicateModels()
+	case "ollama":
+		if s.getProviderStatus("ollama") == "available" {
+			models = s.getOllamaModels()
 		}
+	default:
+		models = []LLMModel{}
 	}
 
 	s.writeJSON(w, map[string]interface{}{

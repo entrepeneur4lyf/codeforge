@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/analysis"
@@ -16,6 +17,12 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 	"github.com/mark3labs/mcp-go/mcp"
 )
+
+// textSearchResult represents a text-based search result
+type textSearchResult struct {
+	Chunk *vectordb.CodeChunk
+	Score float64
+}
 
 // Tool Handlers
 
@@ -44,17 +51,16 @@ func (cfs *CodeForgeServer) handleSemanticSearch(ctx context.Context, request mc
 	queryEmbedding, err := cfs.GenerateQueryEmbedding(ctx, query)
 	if err != nil {
 		log.Printf("Failed to generate embedding for query: %v", err)
-		// Fallback to dummy embedding
-		queryEmbedding = make([]float32, 384) // Standard embedding dimension
-		for i := range queryEmbedding {
-			queryEmbedding[i] = 0.1 // Placeholder
-		}
+		// Fall back to text-based search instead of meaningless dummy embeddings
+		return cfs.handleTextBasedSearch(ctx, query, maxResults, filters)
 	}
 
 	// Search using vector database
 	results, err := cfs.vectorDB.SearchSimilarChunks(ctx, queryEmbedding, maxResults, filters)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
+		log.Printf("Vector search failed: %v", err)
+		// Fall back to text-based search if vector search fails
+		return cfs.handleTextBasedSearch(ctx, query, maxResults, filters)
 	}
 
 	// Format results
@@ -76,6 +82,127 @@ func (cfs *CodeForgeServer) handleSemanticSearch(ctx context.Context, request mc
 	}
 
 	return mcp.NewToolResultText(strings.Join(resultTexts, "\n\n")), nil
+}
+
+// handleTextBasedSearch performs text-based search as fallback when embeddings fail
+func (cfs *CodeForgeServer) handleTextBasedSearch(ctx context.Context, query string, maxResults int, filters map[string]string) (*mcp.CallToolResult, error) {
+	log.Printf("Falling back to text-based search for query: %s", query)
+
+	// Use a dummy embedding to get chunks from the database
+	// This is a workaround since there's no GetAllChunks method
+	dummyEmbedding := make([]float32, 384)
+	for i := range dummyEmbedding {
+		dummyEmbedding[i] = 0.0 // Use zeros instead of 0.1 to avoid bias
+	}
+
+	// Get a large number of chunks to search through
+	allResults, err := cfs.vectorDB.SearchSimilarChunks(ctx, dummyEmbedding, 1000, filters)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to retrieve chunks for text search: %v", err)), nil
+	}
+
+	// Perform text-based matching
+	var matches []textSearchResult
+	queryLower := strings.ToLower(query)
+
+	for _, result := range allResults {
+		chunk := &result.Chunk
+
+		// Calculate text similarity score
+		score := cfs.calculateTextSimilarity(queryLower, chunk.Content)
+		if score > 0.1 { // Minimum relevance threshold
+			matches = append(matches, textSearchResult{
+				Chunk: chunk,
+				Score: score,
+			})
+		}
+	}
+
+	// Sort by score (highest first)
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Score > matches[j].Score
+	})
+
+	// Limit results
+	if len(matches) > maxResults {
+		matches = matches[:maxResults]
+	}
+
+	// Format results
+	var resultTexts []string
+	for _, match := range matches {
+		resultText := fmt.Sprintf("Query: %s\n\nFile: %s\nType: %s\nLanguage: %s\nScore: %.3f (text-based)\n\nContent:\n%s\n---",
+			query,
+			match.Chunk.FilePath,
+			match.Chunk.ChunkType.Type,
+			match.Chunk.Language,
+			match.Score,
+			match.Chunk.Content,
+		)
+		resultTexts = append(resultTexts, resultText)
+	}
+
+	if len(resultTexts) == 0 {
+		return mcp.NewToolResultText("No matching code found using text-based search. Note: Embedding service is unavailable."), nil
+	}
+
+	return mcp.NewToolResultText(strings.Join(resultTexts, "\n\n")), nil
+}
+
+// calculateTextSimilarity calculates a simple text similarity score between query and content
+func (cfs *CodeForgeServer) calculateTextSimilarity(queryLower, content string) float64 {
+	contentLower := strings.ToLower(content)
+
+	// Split query into words
+	queryWords := strings.Fields(queryLower)
+	if len(queryWords) == 0 {
+		return 0.0
+	}
+
+	// Count matches
+	var matches int
+	var totalScore float64
+
+	for _, word := range queryWords {
+		if len(word) < 2 { // Skip very short words
+			continue
+		}
+
+		// Exact word match (highest score)
+		if strings.Contains(contentLower, word) {
+			matches++
+			totalScore += 1.0
+		}
+
+		// Partial match (lower score)
+		for _, contentWord := range strings.Fields(contentLower) {
+			if len(contentWord) >= 3 && strings.Contains(contentWord, word) {
+				totalScore += 0.3
+				break
+			}
+		}
+	}
+
+	// Calculate final score
+	if matches == 0 {
+		return 0.0
+	}
+
+	// Normalize by query length and add bonus for multiple matches
+	baseScore := totalScore / float64(len(queryWords))
+	matchRatio := float64(matches) / float64(len(queryWords))
+
+	// Bonus for high match ratio
+	if matchRatio > 0.5 {
+		baseScore *= 1.5
+	}
+
+	// Cap at 1.0
+	if baseScore > 1.0 {
+		baseScore = 1.0
+	}
+
+	return baseScore
 }
 
 // handleReadFile handles file reading requests

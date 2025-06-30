@@ -2,10 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
 	"github.com/gorilla/mux"
 )
 
@@ -198,7 +201,19 @@ func (s *Server) handleProvider(w http.ResponseWriter, r *http.Request) {
 
 // getProvider returns a specific provider configuration
 func (s *Server) getProvider(w http.ResponseWriter, r *http.Request, providerID string) {
-	// TODO: Get actual provider from configuration
+	// Get actual provider from configuration
+	if s.config == nil {
+		s.writeError(w, "Configuration not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if provider exists in configuration
+	providerType := models.ModelProvider(providerID)
+	if _, exists := s.config.Providers[providerType]; !exists {
+		s.writeError(w, "Provider not found", http.StatusNotFound)
+		return
+	}
+
 	provider := ProviderConfig{
 		ID:      providerID,
 		Name:    strings.Title(providerID),
@@ -223,8 +238,35 @@ func (s *Server) updateProvider(w http.ResponseWriter, r *http.Request, provider
 		return
 	}
 
-	// TODO: Implement actual provider update logic
-	// This would integrate with the configuration system
+	// Implement actual provider update logic
+	if s.config == nil {
+		s.writeError(w, "Configuration not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Validate provider exists
+	providerType := models.ModelProvider(providerID)
+	if _, exists := s.config.Providers[providerType]; !exists {
+		s.writeError(w, "Provider not found", http.StatusNotFound)
+		return
+	}
+
+	// Update provider configuration
+	if req.Settings != nil {
+		if apiKey, ok := req.Settings["api_key"].(string); ok && apiKey != "" {
+			// Update API key in configuration
+			providerConfig := s.config.Providers[providerType]
+			providerConfig.APIKey = apiKey
+			s.config.Providers[providerType] = providerConfig
+		}
+	}
+
+	if req.Enabled != nil {
+		// Update enabled status
+		providerConfig := s.config.Providers[providerType]
+		providerConfig.Disabled = !*req.Enabled
+		s.config.Providers[providerType] = providerConfig
+	}
 
 	response := map[string]interface{}{
 		"success":     true,
@@ -238,7 +280,24 @@ func (s *Server) updateProvider(w http.ResponseWriter, r *http.Request, provider
 
 // deleteProvider disables/removes a provider
 func (s *Server) deleteProvider(w http.ResponseWriter, r *http.Request, providerID string) {
-	// TODO: Implement provider deletion/disabling
+	// Implement provider deletion/disabling
+	if s.config == nil {
+		s.writeError(w, "Configuration not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if provider exists
+	providerType := models.ModelProvider(providerID)
+	if _, exists := s.config.Providers[providerType]; !exists {
+		s.writeError(w, "Provider not found", http.StatusNotFound)
+		return
+	}
+
+	// Disable the provider instead of deleting it
+	providerConfig := s.config.Providers[providerType]
+	providerConfig.Disabled = true
+	s.config.Providers[providerType] = providerConfig
+
 	response := map[string]interface{}{
 		"success":     true,
 		"provider_id": providerID,
@@ -262,14 +321,20 @@ func (s *Server) handleEmbeddingProvider(w http.ResponseWriter, r *http.Request)
 
 // getCurrentEmbeddingProvider returns current embedding provider
 func (s *Server) getCurrentEmbeddingProvider(w http.ResponseWriter, r *http.Request) {
-	// TODO: Get actual current provider from embeddings service
-	config := EmbeddingProviderConfig{
+	// Get actual current provider from configuration
+	embeddingConfig := EmbeddingProviderConfig{
 		Provider:   "fallback",
 		Model:      "hash-based",
 		Dimensions: 384,
 	}
 
-	s.writeJSON(w, config)
+	if s.config != nil && s.config.Embedding.Provider != "" {
+		embeddingConfig.Provider = s.config.Embedding.Provider
+		embeddingConfig.Model = s.config.Embedding.Model
+		embeddingConfig.Endpoint = s.config.Embedding.BaseURL
+	}
+
+	s.writeJSON(w, embeddingConfig)
 }
 
 // setEmbeddingProvider changes the embedding provider
@@ -280,8 +345,30 @@ func (s *Server) setEmbeddingProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Validate and apply embedding provider change
-	// This would call embeddings.ValidateProviderChange()
+	// Validate and apply embedding provider change
+	if s.config == nil {
+		s.writeError(w, "Configuration not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Validate provider
+	validProviders := []string{"ollama", "openai", "fallback"}
+	valid := false
+	for _, provider := range validProviders {
+		if config.Provider == provider {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		s.writeError(w, fmt.Sprintf("Invalid embedding provider: %s", config.Provider), http.StatusBadRequest)
+		return
+	}
+
+	// Update embedding configuration
+	s.config.Embedding.Provider = config.Provider
+	s.config.Embedding.Model = config.Model
+	s.config.Embedding.BaseURL = config.Endpoint
 
 	response := map[string]interface{}{
 		"success": true,
@@ -294,10 +381,18 @@ func (s *Server) setEmbeddingProvider(w http.ResponseWriter, r *http.Request) {
 
 // Helper methods for provider status
 func (s *Server) isProviderEnabled(providerID string) bool {
-	// TODO: Check actual provider status
+	// Check actual provider status from configuration
+	if s.config == nil {
+		return false
+	}
+
+	providerType := models.ModelProvider(providerID)
+	if providerConfig, exists := s.config.Providers[providerType]; exists {
+		return !providerConfig.Disabled && providerConfig.APIKey != ""
+	}
+
+	// Special cases for providers not in main config
 	switch providerID {
-	case "anthropic", "openai", "openrouter":
-		return s.getProviderSetting(providerID, "api_key") != ""
 	case "ollama", "ollama-embedding":
 		return s.getProviderStatus(providerID) == "available"
 	case "fallback-embedding":
@@ -308,20 +403,56 @@ func (s *Server) isProviderEnabled(providerID string) bool {
 }
 
 func (s *Server) isDefaultProvider(providerType, providerID string) bool {
-	// TODO: Get from actual configuration
+	// Get from actual configuration
+	if s.config == nil {
+		// Fallback to defaults
+		if providerType == "llm" {
+			return providerID == "anthropic"
+		}
+		if providerType == "embedding" {
+			return providerID == "fallback"
+		}
+		return false
+	}
+
 	if providerType == "llm" {
-		return providerID == "anthropic"
+		// Find the first enabled provider as default
+		providerOrder := []models.ModelProvider{
+			models.ProviderCopilot,
+			models.ProviderAnthropic,
+			models.ProviderOpenAI,
+			models.ProviderGemini,
+			models.ProviderGROQ,
+			models.ProviderOpenRouter,
+		}
+
+		for _, provider := range providerOrder {
+			if providerConfig, exists := s.config.Providers[provider]; exists && !providerConfig.Disabled {
+				return string(provider) == providerID
+			}
+		}
 	}
+
 	if providerType == "embedding" {
-		return providerID == "fallback"
+		return s.config.Embedding.Provider == providerID
 	}
+
 	return false
 }
 
 func (s *Server) getProviderSetting(providerID, setting string) string {
-	// TODO: Get from actual configuration
+	// Get from actual configuration first
+	if s.config != nil {
+		providerType := models.ModelProvider(providerID)
+		if providerConfig, exists := s.config.Providers[providerType]; exists {
+			if setting == "api_key" {
+				return maskAPIKey(providerConfig.APIKey)
+			}
+		}
+	}
+
+	// Fallback to environment variables
 	if setting == "api_key" {
-		// Check environment variables
 		switch providerID {
 		case "anthropic":
 			return maskAPIKey(getEnvVar("ANTHROPIC_API_KEY"))
@@ -329,32 +460,51 @@ func (s *Server) getProviderSetting(providerID, setting string) string {
 			return maskAPIKey(getEnvVar("OPENAI_API_KEY"))
 		case "openrouter":
 			return maskAPIKey(getEnvVar("OPENROUTER_API_KEY"))
+		case "gemini":
+			return maskAPIKey(getEnvVar("GEMINI_API_KEY"))
+		case "groq":
+			return maskAPIKey(getEnvVar("GROQ_API_KEY"))
 		}
 	}
 	return ""
 }
 
 func (s *Server) getProviderStatus(providerID string) string {
-	// TODO: Check actual provider availability
+	// Check actual provider availability
 	switch providerID {
 	case "anthropic":
+		if s.config != nil {
+			if providerConfig, exists := s.config.Providers[models.ProviderAnthropic]; exists && providerConfig.APIKey != "" {
+				return "configured"
+			}
+		}
 		if getEnvVar("ANTHROPIC_API_KEY") != "" {
 			return "configured"
 		}
 		return "available"
 	case "openai":
+		if s.config != nil {
+			if providerConfig, exists := s.config.Providers[models.ProviderOpenAI]; exists && providerConfig.APIKey != "" {
+				return "configured"
+			}
+		}
 		if getEnvVar("OPENAI_API_KEY") != "" {
 			return "configured"
 		}
 		return "available"
 	case "openrouter":
+		if s.config != nil {
+			if providerConfig, exists := s.config.Providers[models.ProviderOpenRouter]; exists && providerConfig.APIKey != "" {
+				return "configured"
+			}
+		}
 		if getEnvVar("OPENROUTER_API_KEY") != "" {
 			return "configured"
 		}
 		return "available"
 	case "ollama", "ollama-embedding":
-		// TODO: Check if Ollama is running
-		return "available"
+		// Check if Ollama is running by trying to connect
+		return s.checkOllamaAvailability()
 	default:
 		return "available"
 	}
@@ -373,4 +523,26 @@ func maskAPIKey(key string) string {
 
 func getEnvVar(name string) string {
 	return os.Getenv(name)
+}
+
+// checkOllamaAvailability checks if Ollama is running and available
+func (s *Server) checkOllamaAvailability() string {
+	endpoint := os.Getenv("OLLAMA_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "http://localhost:11434"
+	}
+
+	// Try to connect to Ollama API
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(endpoint + "/api/tags")
+	if err != nil {
+		return "unavailable"
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return "available"
+	}
+
+	return "unavailable"
 }

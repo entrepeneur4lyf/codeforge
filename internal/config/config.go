@@ -26,6 +26,29 @@ type Agent struct {
 	ReasoningEffort string         `json:"reasoningEffort"`
 }
 
+// ModelConfig defines model-specific configuration including context limits
+type ModelConfig struct {
+	ContextWindow      int     `json:"contextWindow"`      // Maximum context window size
+	MaxOutputTokens    int     `json:"maxOutputTokens"`    // Maximum output tokens
+	CostPer1KInput     float64 `json:"costPer1KInput"`     // Cost per 1K input tokens
+	CostPer1KOutput    float64 `json:"costPer1KOutput"`    // Cost per 1K output tokens
+	SupportsTools      bool    `json:"supportsTools"`      // Whether model supports tool calling
+	SupportsReasoning  bool    `json:"supportsReasoning"`  // Whether model supports reasoning
+	SummarizeThreshold float64 `json:"summarizeThreshold"` // Threshold (0.0-1.0) to trigger summarization
+}
+
+// ContextConfig defines context management configuration
+type ContextConfig struct {
+	AutoSummarize      bool    `json:"autoSummarize"`      // Enable automatic summarization
+	SlidingWindow      bool    `json:"slidingWindow"`      // Enable sliding window
+	WindowOverlap      int     `json:"windowOverlap"`      // Overlap size for sliding window
+	CacheEnabled       bool    `json:"cacheEnabled"`       // Enable context caching
+	CacheTTL           int     `json:"cacheTTL"`           // Cache TTL in seconds
+	MaxCacheSize       int     `json:"maxCacheSize"`       // Maximum cache entries
+	CompressionLevel   int     `json:"compressionLevel"`   // Context compression level (0-9)
+	RelevanceThreshold float64 `json:"relevanceThreshold"` // Minimum relevance score for inclusion
+}
+
 // Provider defines configuration for an LLM provider
 type Provider struct {
 	APIKey   string `json:"apiKey"`
@@ -94,6 +117,8 @@ type Config struct {
 	Shell        ShellConfig                       `json:"shell,omitempty"`
 	Embedding    EmbeddingConfig                   `json:"embedding,omitempty"`
 	AutoCompact  bool                              `json:"autoCompact,omitempty"`
+	Models       map[string]ModelConfig            `json:"models,omitempty"` // Model-specific configurations
+	Context      ContextConfig                     `json:"context"`          // Context management configuration
 }
 
 // Application constants
@@ -169,6 +194,16 @@ func setDefaults(debug bool) {
 	viper.SetDefault("contextPaths", defaultContextPaths)
 	viper.SetDefault("tui.theme", "codeforge")
 	viper.SetDefault("autoCompact", true)
+
+	// Context management defaults
+	viper.SetDefault("context.autoSummarize", true)
+	viper.SetDefault("context.slidingWindow", true)
+	viper.SetDefault("context.windowOverlap", 200)
+	viper.SetDefault("context.cacheEnabled", true)
+	viper.SetDefault("context.cacheTTL", 3600) // 1 hour
+	viper.SetDefault("context.maxCacheSize", 1000)
+	viper.SetDefault("context.compressionLevel", 3)
+	viper.SetDefault("context.relevanceThreshold", 0.1)
 
 	// Set default shell from environment or fallback to /bin/bash
 	shellPath := os.Getenv("SHELL")
@@ -291,6 +326,117 @@ func setDefaultAgents() {
 // Get returns the global configuration instance
 func Get() *Config {
 	return cfg
+}
+
+// GetModelConfig returns configuration for a specific model
+func (c *Config) GetModelConfig(modelID string) ModelConfig {
+	if config, exists := c.Models[modelID]; exists {
+		return config
+	}
+
+	// Return default configuration based on model type
+	return getDefaultModelConfig(modelID)
+}
+
+// getDefaultModelConfig returns default configuration for common models
+func getDefaultModelConfig(modelID string) ModelConfig {
+	modelLower := strings.ToLower(modelID)
+
+	switch {
+	case strings.Contains(modelLower, "gpt-4o"):
+		return ModelConfig{
+			ContextWindow:      128000,
+			MaxOutputTokens:    4096,
+			CostPer1KInput:     0.0025,
+			CostPer1KOutput:    0.01,
+			SupportsTools:      true,
+			SupportsReasoning:  false,
+			SummarizeThreshold: 0.9,
+		}
+	case strings.Contains(modelLower, "gpt-4"):
+		return ModelConfig{
+			ContextWindow:      8192,
+			MaxOutputTokens:    4096,
+			CostPer1KInput:     0.03,
+			CostPer1KOutput:    0.06,
+			SupportsTools:      true,
+			SupportsReasoning:  false,
+			SummarizeThreshold: 0.9,
+		}
+	case strings.Contains(modelLower, "gpt-3.5"):
+		return ModelConfig{
+			ContextWindow:      16385,
+			MaxOutputTokens:    4096,
+			CostPer1KInput:     0.0015,
+			CostPer1KOutput:    0.002,
+			SupportsTools:      true,
+			SupportsReasoning:  false,
+			SummarizeThreshold: 0.9,
+		}
+	case strings.Contains(modelLower, "claude-3.5-sonnet"):
+		return ModelConfig{
+			ContextWindow:      200000,
+			MaxOutputTokens:    8192,
+			CostPer1KInput:     0.003,
+			CostPer1KOutput:    0.015,
+			SupportsTools:      true,
+			SupportsReasoning:  false,
+			SummarizeThreshold: 0.9,
+		}
+	case strings.Contains(modelLower, "claude-3"):
+		return ModelConfig{
+			ContextWindow:      200000,
+			MaxOutputTokens:    4096,
+			CostPer1KInput:     0.003,
+			CostPer1KOutput:    0.015,
+			SupportsTools:      true,
+			SupportsReasoning:  false,
+			SummarizeThreshold: 0.9,
+		}
+	case strings.Contains(modelLower, "gemini-1.5-pro"):
+		return ModelConfig{
+			ContextWindow:      2097152, // 2M tokens
+			MaxOutputTokens:    8192,
+			CostPer1KInput:     0.00125,
+			CostPer1KOutput:    0.005,
+			SupportsTools:      true,
+			SupportsReasoning:  false,
+			SummarizeThreshold: 0.95, // Higher threshold due to large context
+		}
+	case strings.Contains(modelLower, "gemini"):
+		return ModelConfig{
+			ContextWindow:      32768,
+			MaxOutputTokens:    8192,
+			CostPer1KInput:     0.00075,
+			CostPer1KOutput:    0.003,
+			SupportsTools:      true,
+			SupportsReasoning:  false,
+			SummarizeThreshold: 0.9,
+		}
+	default:
+		// Generic default
+		return ModelConfig{
+			ContextWindow:      8192,
+			MaxOutputTokens:    2048,
+			CostPer1KInput:     0.001,
+			CostPer1KOutput:    0.002,
+			SupportsTools:      false,
+			SupportsReasoning:  false,
+			SummarizeThreshold: 0.9,
+		}
+	}
+}
+
+// ShouldSummarize determines if conversation should be summarized based on token usage
+func (c *Config) ShouldSummarize(modelID string, currentTokens int) bool {
+	modelConfig := c.GetModelConfig(modelID)
+	threshold := int(float64(modelConfig.ContextWindow) * modelConfig.SummarizeThreshold)
+	return currentTokens >= threshold
+}
+
+// GetContextConfig returns the context management configuration
+func (c *Config) GetContextConfig() ContextConfig {
+	return c.Context
 }
 
 // GetProvider returns the configuration for a specific provider

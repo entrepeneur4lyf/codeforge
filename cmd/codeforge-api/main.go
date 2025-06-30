@@ -28,7 +28,8 @@ func main() {
 	}
 
 	if *debug {
-		// TODO: Set debug mode when config supports it
+		// Set debug mode in configuration
+		cfg.Debug = true
 		log.Println("Debug mode enabled")
 	}
 

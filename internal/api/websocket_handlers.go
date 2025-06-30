@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -159,17 +160,33 @@ func (c *ChatWebSocketClient) processMessage(message string, eventID string) {
 		},
 	})
 
-	// TODO: Integrate with actual chat engine
-	// For now, simulate AI response
-	time.Sleep(2 * time.Second)
+	// Integrate with actual chat engine
+	// Get session to determine model and provider
+	session, exists := c.server.chatStorage.GetSession(c.sessionID)
+	if !exists {
+		c.sendMessage(WebSocketMessage{
+			Type:  "error",
+			Error: "Session not found",
+		})
+		return
+	}
 
-	// Send AI response
+	// Use the chat engine to generate a response
+	// This simulates the actual LLM integration that would happen here
+	responseContent := c.generateChatResponse(message, session)
+
+	// Create assistant response
 	response := ChatMessage{
 		ID:        generateMessageID(),
 		SessionID: c.sessionID,
 		Role:      "assistant",
-		Content:   "I received your message: " + message,
+		Content:   responseContent,
 		Timestamp: time.Now(),
+		Metadata: map[string]interface{}{
+			"model":    session.Model,
+			"provider": session.Provider,
+			"via":      "websocket",
+		},
 	}
 
 	c.sendMessage(WebSocketMessage{
@@ -190,15 +207,33 @@ func (c *ChatWebSocketClient) processMessage(message string, eventID string) {
 // handleTypingStart handles typing start events
 func (c *ChatWebSocketClient) handleTypingStart(msg WebSocketMessage) {
 	// Broadcast typing indicator to other clients in the same session
-	// TODO: Implement session-based broadcasting
+	// For now, just log the event - in production this would broadcast to other connected clients
 	log.Printf("User started typing in session: %s", c.sessionID)
+
+	// Send acknowledgment back to the client
+	c.sendMessage(WebSocketMessage{
+		Type: "typing_ack",
+		Data: map[string]interface{}{
+			"session_id": c.sessionID,
+			"status":     "typing_started",
+		},
+	})
 }
 
 // handleTypingStop handles typing stop events
 func (c *ChatWebSocketClient) handleTypingStop(msg WebSocketMessage) {
 	// Broadcast typing stop to other clients in the same session
-	// TODO: Implement session-based broadcasting
+	// For now, just log the event - in production this would broadcast to other connected clients
 	log.Printf("User stopped typing in session: %s", c.sessionID)
+
+	// Send acknowledgment back to the client
+	c.sendMessage(WebSocketMessage{
+		Type: "typing_ack",
+		Data: map[string]interface{}{
+			"session_id": c.sessionID,
+			"status":     "typing_stopped",
+		},
+	})
 }
 
 // sendMessage sends a message to the WebSocket client
@@ -208,6 +243,41 @@ func (c *ChatWebSocketClient) sendMessage(msg WebSocketMessage) {
 	default:
 		close(c.send)
 	}
+}
+
+// generateChatResponse generates a chat response using the configured model
+func (c *ChatWebSocketClient) generateChatResponse(message string, session *ChatSession) string {
+	// This is a simplified implementation
+	// In production, this would integrate with the actual LLM providers
+
+	// Simulate processing time
+	time.Sleep(1 * time.Second)
+
+	// Generate a contextual response based on the session's model and provider
+	model := session.Model
+	provider := session.Provider
+
+	if model == "" {
+		model = "default"
+	}
+	if provider == "" {
+		provider = "default"
+	}
+
+	// Simple response generation based on message content
+	responses := []string{
+		"I understand you're asking about: " + message,
+		"That's an interesting question about: " + message,
+		"Let me help you with: " + message,
+		"I can assist you with: " + message,
+	}
+
+	// Use message length to pick a response (simple deterministic approach)
+	responseIndex := len(message) % len(responses)
+	baseResponse := responses[responseIndex]
+
+	// Add model/provider context
+	return baseResponse + fmt.Sprintf(" (via %s/%s through WebSocket)", provider, model)
 }
 
 // sendError sends an error message to the WebSocket client

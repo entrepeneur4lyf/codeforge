@@ -1,10 +1,17 @@
 package api
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+
+	"github.com/entrepeneur4lyf/codeforge/internal/embeddings"
 )
 
 // ProjectStructure represents the project file structure
@@ -57,45 +64,309 @@ type SearchMatch struct {
 
 // handleProjectStructure returns the project file structure
 func (s *Server) handleProjectStructure(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement actual project structure scanning
-	// For now, return a mock structure
-	structure := ProjectStructure{
-		Name: "CodeForge",
-		Type: "directory",
-		Path: "/",
-		Children: []ProjectStructure{
-			{
-				Name: "cmd",
-				Type: "directory",
-				Path: "/cmd",
-				Children: []ProjectStructure{
-					{
-						Name: "codeforge",
-						Type: "directory",
-						Path: "/cmd/codeforge",
-						Children: []ProjectStructure{
-							{Name: "main.go", Type: "file", Path: "/cmd/codeforge/main.go", Size: 1024},
-						},
-					},
-				},
-			},
-			{
-				Name: "internal",
-				Type: "directory",
-				Path: "/internal",
-				Children: []ProjectStructure{
-					{Name: "api", Type: "directory", Path: "/internal/api"},
-					{Name: "chat", Type: "directory", Path: "/internal/chat"},
-					{Name: "llm", Type: "directory", Path: "/internal/llm"},
-					{Name: "vectordb", Type: "directory", Path: "/internal/vectordb"},
-				},
-			},
-			{Name: "README.md", Type: "file", Path: "/README.md", Size: 15420},
-			{Name: "go.mod", Type: "file", Path: "/go.mod", Size: 2048},
-		},
+	// Implement actual project structure scanning using filesystem
+	workingDir := "."
+	if s.config != nil && s.config.WorkingDir != "" {
+		workingDir = s.config.WorkingDir
+	}
+
+	// Build directory tree with limited depth to avoid performance issues
+	maxDepth := 3
+	if depthStr := r.URL.Query().Get("depth"); depthStr != "" {
+		if depth, err := strconv.Atoi(depthStr); err == nil && depth > 0 && depth <= 10 {
+			maxDepth = depth
+		}
+	}
+
+	structure, err := s.buildProjectStructure(workingDir, maxDepth)
+	if err != nil {
+		s.writeError(w, fmt.Sprintf("Failed to scan project structure: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	s.writeJSON(w, structure)
+}
+
+// buildProjectStructure recursively builds the project directory structure
+func (s *Server) buildProjectStructure(rootPath string, maxDepth int) (ProjectStructure, error) {
+	return s.buildProjectStructureRecursive(rootPath, "", 0, maxDepth)
+}
+
+// buildProjectStructureRecursive recursively scans directories
+func (s *Server) buildProjectStructureRecursive(rootPath, relativePath string, currentDepth, maxDepth int) (ProjectStructure, error) {
+	if currentDepth > maxDepth {
+		return ProjectStructure{}, nil
+	}
+
+	fullPath := filepath.Join(rootPath, relativePath)
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return ProjectStructure{}, err
+	}
+
+	name := info.Name()
+	if relativePath == "" {
+		name = filepath.Base(rootPath)
+	}
+
+	structure := ProjectStructure{
+		Name: name,
+		Path: "/" + strings.ReplaceAll(relativePath, "\\", "/"),
+		Size: info.Size(),
+	}
+
+	if info.IsDir() {
+		structure.Type = "directory"
+
+		// Skip hidden directories and common ignore patterns
+		if s.shouldIgnoreDirectory(name) {
+			return structure, nil
+		}
+
+		// Read directory contents
+		entries, err := os.ReadDir(fullPath)
+		if err != nil {
+			return structure, err
+		}
+
+		for _, entry := range entries {
+			childRelPath := filepath.Join(relativePath, entry.Name())
+			child, err := s.buildProjectStructureRecursive(rootPath, childRelPath, currentDepth+1, maxDepth)
+			if err != nil {
+				continue // Skip files with errors
+			}
+
+			// Only add non-empty structures
+			if child.Name != "" {
+				structure.Children = append(structure.Children, child)
+			}
+		}
+	} else {
+		structure.Type = "file"
+
+		// Skip hidden files and common ignore patterns
+		if s.shouldIgnoreFile(name) {
+			return ProjectStructure{}, nil
+		}
+	}
+
+	return structure, nil
+}
+
+// shouldIgnoreDirectory checks if a directory should be ignored
+func (s *Server) shouldIgnoreDirectory(name string) bool {
+	ignoreDirs := []string{
+		".git", ".svn", ".hg",
+		"node_modules", "vendor", "target",
+		".vscode", ".idea",
+		"__pycache__", ".pytest_cache",
+		"dist", "build", "out",
+	}
+
+	for _, ignore := range ignoreDirs {
+		if name == ignore {
+			return true
+		}
+	}
+
+	return strings.HasPrefix(name, ".")
+}
+
+// shouldIgnoreFile checks if a file should be ignored
+func (s *Server) shouldIgnoreFile(name string) bool {
+	ignoreFiles := []string{
+		".DS_Store", "Thumbs.db",
+		".gitignore", ".gitkeep",
+	}
+
+	for _, ignore := range ignoreFiles {
+		if name == ignore {
+			return true
+		}
+	}
+
+	// Ignore hidden files
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
+
+	// Ignore binary files by extension
+	ext := strings.ToLower(filepath.Ext(name))
+	binaryExts := []string{
+		".exe", ".dll", ".so", ".dylib",
+		".jpg", ".jpeg", ".png", ".gif", ".bmp",
+		".mp3", ".mp4", ".avi", ".mov",
+		".zip", ".tar", ".gz", ".rar",
+		".pdf", ".doc", ".docx",
+	}
+
+	for _, binExt := range binaryExts {
+		if ext == binExt {
+			return true
+		}
+	}
+
+	return false
+}
+
+// scanProjectFiles scans the project directory for files
+func (s *Server) scanProjectFiles(rootPath, languageFilter, typeFilter string) ([]FileInfo, error) {
+	var files []FileInfo
+
+	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip files with errors
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			// Skip ignored directories
+			if s.shouldIgnoreDirectory(info.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip ignored files
+		if s.shouldIgnoreFile(info.Name()) {
+			return nil
+		}
+
+		// Get relative path
+		relPath, err := filepath.Rel(rootPath, path)
+		if err != nil {
+			return nil
+		}
+
+		// Normalize path separators
+		relPath = "/" + strings.ReplaceAll(relPath, "\\", "/")
+
+		// Detect language
+		language := s.detectLanguage(path)
+
+		// Apply language filter
+		if languageFilter != "" && language != languageFilter {
+			return nil
+		}
+
+		// Apply type filter
+		if typeFilter != "" {
+			ext := strings.TrimPrefix(filepath.Ext(path), ".")
+			if ext != typeFilter {
+				return nil
+			}
+		}
+
+		// Count lines in text files
+		lineCount := s.countLines(path)
+
+		file := FileInfo{
+			Path:         relPath,
+			Name:         info.Name(),
+			Size:         info.Size(),
+			Language:     language,
+			LastModified: info.ModTime().Format("2006-01-02T15:04:05Z"),
+			LineCount:    lineCount,
+		}
+
+		files = append(files, file)
+		return nil
+	})
+
+	return files, err
+}
+
+// detectLanguage detects the programming language from file extension
+func (s *Server) detectLanguage(filePath string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
+
+	languageMap := map[string]string{
+		".go":   "go",
+		".js":   "javascript",
+		".ts":   "typescript",
+		".py":   "python",
+		".java": "java",
+		".cpp":  "cpp",
+		".c":    "c",
+		".h":    "c",
+		".hpp":  "cpp",
+		".rs":   "rust",
+		".php":  "php",
+		".rb":   "ruby",
+		".sh":   "shell",
+		".bash": "shell",
+		".zsh":  "shell",
+		".fish": "shell",
+		".ps1":  "powershell",
+		".sql":  "sql",
+		".html": "html",
+		".css":  "css",
+		".scss": "scss",
+		".sass": "sass",
+		".less": "less",
+		".xml":  "xml",
+		".json": "json",
+		".yaml": "yaml",
+		".yml":  "yaml",
+		".toml": "toml",
+		".md":   "markdown",
+		".txt":  "text",
+	}
+
+	if lang, exists := languageMap[ext]; exists {
+		return lang
+	}
+
+	return "unknown"
+}
+
+// countLines counts the number of lines in a text file
+func (s *Server) countLines(filePath string) int {
+	// Only count lines for text files to avoid reading large binary files
+	if s.shouldIgnoreFile(filepath.Base(filePath)) {
+		return 0
+	}
+
+	// Check if it's a text file by extension
+	ext := strings.ToLower(filepath.Ext(filePath))
+	textExts := []string{
+		".go", ".js", ".ts", ".py", ".java", ".cpp", ".c", ".h", ".hpp",
+		".rs", ".php", ".rb", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+		".sql", ".html", ".css", ".scss", ".sass", ".less", ".xml",
+		".json", ".yaml", ".yml", ".toml", ".md", ".txt",
+	}
+
+	isText := false
+	for _, textExt := range textExts {
+		if ext == textExt {
+			isText = true
+			break
+		}
+	}
+
+	if !isText {
+		return 0
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0
+	}
+	defer file.Close()
+
+	// Read file and count lines
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return 0
+	}
+
+	// Count newlines
+	lines := strings.Count(string(content), "\n")
+	if len(content) > 0 && !strings.HasSuffix(string(content), "\n") {
+		lines++ // Add 1 if file doesn't end with newline
+	}
+
+	return lines
 }
 
 // handleProjectFiles returns a list of project files
@@ -104,33 +375,16 @@ func (s *Server) handleProjectFiles(w http.ResponseWriter, r *http.Request) {
 	language := r.URL.Query().Get("language")
 	fileType := r.URL.Query().Get("type")
 
-	// TODO: Implement actual file scanning
-	// For now, return mock files
-	files := []FileInfo{
-		{
-			Path:         "/cmd/codeforge/main.go",
-			Name:         "main.go",
-			Size:         1024,
-			Language:     "go",
-			LastModified: "2024-01-15T10:30:00Z",
-			LineCount:    45,
-		},
-		{
-			Path:         "/internal/api/server.go",
-			Name:         "server.go",
-			Size:         8192,
-			Language:     "go",
-			LastModified: "2024-01-15T14:20:00Z",
-			LineCount:    320,
-		},
-		{
-			Path:         "/internal/chat/engine.go",
-			Name:         "engine.go",
-			Size:         4096,
-			Language:     "go",
-			LastModified: "2024-01-15T12:15:00Z",
-			LineCount:    180,
-		},
+	// Implement actual file scanning
+	workingDir := "."
+	if s.config != nil && s.config.WorkingDir != "" {
+		workingDir = s.config.WorkingDir
+	}
+
+	files, err := s.scanProjectFiles(workingDir, language, fileType)
+	if err != nil {
+		s.writeError(w, fmt.Sprintf("Failed to scan project files: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	// Filter by language if specified
@@ -178,39 +432,25 @@ func (s *Server) handleProjectSearch(w http.ResponseWriter, r *http.Request) {
 		req.SearchType = "text"
 	}
 
-	// TODO: Implement actual search using vector database and text search
-	// For now, return mock results
-	results := []SearchResult{
-		{
-			Path:     "/internal/api/server.go",
-			Name:     "server.go",
-			Language: "go",
-			Score:    0.95,
-			Matches: []SearchMatch{
-				{
-					LineNumber: 42,
-					Line:       "func (s *Server) Start(port int) error {",
-					Column:     15,
-					Length:     5,
-					Context:    "Server startup function",
-				},
-			},
-		},
-		{
-			Path:     "/internal/chat/engine.go",
-			Name:     "engine.go",
-			Language: "go",
-			Score:    0.87,
-			Matches: []SearchMatch{
-				{
-					LineNumber: 28,
-					Line:       "// Start the chat engine",
-					Column:     11,
-					Length:     5,
-					Context:    "Chat engine initialization",
-				},
-			},
-		},
+	// Implement actual search using vector database and text search
+	var results []SearchResult
+	var err error
+
+	switch req.SearchType {
+	case "vector", "semantic":
+		results, err = s.performVectorSearch(req)
+	case "text", "literal":
+		results, err = s.performTextSearch(req)
+	default:
+		// Hybrid search: combine vector and text search
+		vectorResults, _ := s.performVectorSearch(req)
+		textResults, _ := s.performTextSearch(req)
+		results = s.combineSearchResults(vectorResults, textResults, req.MaxResults)
+	}
+
+	if err != nil {
+		s.writeError(w, fmt.Sprintf("Search failed: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	// Filter results based on search criteria
@@ -240,4 +480,211 @@ func (s *Server) handleProjectSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, response)
+}
+
+// performVectorSearch performs semantic search using the vector database
+func (s *Server) performVectorSearch(req SearchRequest) ([]SearchResult, error) {
+	if s.vectorDB == nil {
+		return []SearchResult{}, nil
+	}
+
+	// Generate embedding for the search query
+	ctx := context.Background()
+	queryEmbedding, err := s.generateQueryEmbedding(ctx, req.Query)
+	if err != nil {
+		return []SearchResult{}, err
+	}
+
+	// Prepare filters
+	filters := make(map[string]string)
+	if len(req.Languages) > 0 {
+		filters["language"] = req.Languages[0] // Use first language for now
+	}
+
+	// Search vector database
+	vectorResults, err := s.vectorDB.SearchSimilarChunks(ctx, queryEmbedding, req.MaxResults, filters)
+	if err != nil {
+		return []SearchResult{}, err
+	}
+
+	// Convert vector results to search results
+	var results []SearchResult
+	for _, vr := range vectorResults {
+		result := SearchResult{
+			Path:     vr.Chunk.FilePath,
+			Name:     filepath.Base(vr.Chunk.FilePath),
+			Language: vr.Chunk.Language,
+			Score:    float64(vr.Score),
+			Matches: []SearchMatch{
+				{
+					LineNumber: vr.Chunk.Location.StartLine,
+					Line:       vr.Chunk.Content,
+					Column:     0,
+					Length:     len(req.Query),
+					Context:    "Vector search match",
+				},
+			},
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// performTextSearch performs literal text search in files
+func (s *Server) performTextSearch(req SearchRequest) ([]SearchResult, error) {
+	workingDir := "."
+	if s.config != nil && s.config.WorkingDir != "" {
+		workingDir = s.config.WorkingDir
+	}
+
+	var results []SearchResult
+	query := strings.ToLower(req.Query)
+
+	err := filepath.Walk(workingDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		// Skip directories and ignored files
+		if info.IsDir() {
+			if s.shouldIgnoreDirectory(info.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if s.shouldIgnoreFile(info.Name()) {
+			return nil
+		}
+
+		// Check language filter
+		language := s.detectLanguage(path)
+		if len(req.Languages) > 0 {
+			found := false
+			for _, lang := range req.Languages {
+				if language == lang {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil
+			}
+		}
+
+		// Search in file content
+		matches, err := s.searchInFile(path, query)
+		if err != nil || len(matches) == 0 {
+			return nil
+		}
+
+		// Get relative path
+		relPath, err := filepath.Rel(workingDir, path)
+		if err != nil {
+			return nil
+		}
+		relPath = "/" + strings.ReplaceAll(relPath, "\\", "/")
+
+		result := SearchResult{
+			Path:     relPath,
+			Name:     info.Name(),
+			Language: language,
+			Score:    float64(len(matches)) / 10.0, // Simple scoring
+			Matches:  matches,
+		}
+
+		results = append(results, result)
+		return nil
+	})
+
+	return results, err
+}
+
+// combineSearchResults combines vector and text search results
+func (s *Server) combineSearchResults(vectorResults, textResults []SearchResult, maxResults int) []SearchResult {
+	// Simple combination: merge and deduplicate by path
+	resultMap := make(map[string]SearchResult)
+
+	// Add vector results first (higher priority)
+	for _, result := range vectorResults {
+		resultMap[result.Path] = result
+	}
+
+	// Add text results if not already present
+	for _, result := range textResults {
+		if _, exists := resultMap[result.Path]; !exists {
+			resultMap[result.Path] = result
+		}
+	}
+
+	// Convert back to slice and limit
+	var combined []SearchResult
+	for _, result := range resultMap {
+		combined = append(combined, result)
+		if len(combined) >= maxResults {
+			break
+		}
+	}
+
+	return combined
+}
+
+// generateQueryEmbedding generates an embedding for the search query
+func (s *Server) generateQueryEmbedding(ctx context.Context, query string) ([]float32, error) {
+	// Use the embeddings service to generate embedding
+	embeddingService := embeddings.Get()
+	if embeddingService == nil {
+		// Fallback to dummy embedding
+		embedding := make([]float32, 384)
+		for i := range embedding {
+			embedding[i] = 0.1
+		}
+		return embedding, nil
+	}
+
+	return embeddings.GetEmbedding(ctx, query)
+}
+
+// searchInFile searches for a query string in a file and returns matches
+func (s *Server) searchInFile(filePath, query string) ([]SearchMatch, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var matches []SearchMatch
+	scanner := bufio.NewScanner(file)
+	lineNumber := 1
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		lowerLine := strings.ToLower(line)
+
+		// Find all occurrences of the query in this line
+		index := 0
+		for {
+			pos := strings.Index(lowerLine[index:], query)
+			if pos == -1 {
+				break
+			}
+
+			actualPos := index + pos
+			match := SearchMatch{
+				LineNumber: lineNumber,
+				Line:       line,
+				Column:     actualPos,
+				Length:     len(query),
+				Context:    fmt.Sprintf("Line %d", lineNumber),
+			}
+			matches = append(matches, match)
+
+			index = actualPos + 1
+		}
+
+		lineNumber++
+	}
+
+	return matches, scanner.Err()
 }
