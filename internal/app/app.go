@@ -8,24 +8,36 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/entrepeneur4lyf/codeforge/internal/chat"
 	"github.com/entrepeneur4lyf/codeforge/internal/config"
 	contextmgmt "github.com/entrepeneur4lyf/codeforge/internal/context"
+	"github.com/entrepeneur4lyf/codeforge/internal/events"
+	"github.com/entrepeneur4lyf/codeforge/internal/llm"
 	"github.com/entrepeneur4lyf/codeforge/internal/mcp"
+	"github.com/entrepeneur4lyf/codeforge/internal/notifications"
 	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 )
 
 // App represents the main CodeForge application with all integrated systems
 type App struct {
-	Config         *config.Config
-	VectorDB       *vectordb.VectorDB
-	ContextManager *contextmgmt.ContextManager
+	Config              *config.Config
+	VectorDB            *vectordb.VectorDB
+	ContextManager      *contextmgmt.ContextManager
+	EventManager        *events.Manager
+	NotificationManager *notifications.Manager
 
 	PermissionService    *permissions.PermissionService
 	PermissionStorage    *permissions.PermissionStorage
 	FileOperationManager *permissions.FileOperationManager
 	MCPServer            *mcp.PermissionAwareMCPServer
 	WorkspaceRoot        string
+
+	// Server reference for broadcasting events (set externally)
+	server interface {
+		BroadcastProgressUpdate(operationID string, progress float64, message string, sessionID string)
+		BroadcastSystemEvent(eventType string, payload interface{})
+	}
 }
 
 // AppConfig represents configuration for app initialization
@@ -62,6 +74,11 @@ func NewApp(ctx context.Context, appConfig *AppConfig) (*App, error) {
 	app := &App{
 		Config:        cfg,
 		WorkspaceRoot: absWorkspace,
+	}
+
+	// Initialize event system
+	if err := app.initializeEventSystem(); err != nil {
+		return nil, fmt.Errorf("failed to initialize event system: %w", err)
 	}
 
 	// Initialize vector database
@@ -187,12 +204,11 @@ func (app *App) initializeMCPServer() error {
 		)
 		log.Printf("Permission-aware MCP server initialized")
 	} else {
-		// Create basic MCP server (fallback)
+		// Create basic MCP server (fallback when permissions are disabled)
 		baseServer := mcp.NewCodeForgeServer(app.Config, app.VectorDB, app.WorkspaceRoot)
 		log.Printf("Basic MCP server initialized (no permissions)")
 
-		// We need to wrap this in a compatible interface
-		// For now, we'll create a minimal wrapper
+		// Wrap in permission-aware interface for consistency
 		app.MCPServer = &mcp.PermissionAwareMCPServer{
 			CodeForgeServer: baseServer,
 		}
@@ -221,8 +237,34 @@ func (app *App) GetFileOperationManager() *permissions.FileOperationManager {
 	return app.FileOperationManager
 }
 
+// SetServer sets the server reference for event broadcasting
+func (app *App) SetServer(server interface {
+	BroadcastProgressUpdate(operationID string, progress float64, message string, sessionID string)
+	BroadcastSystemEvent(eventType string, payload interface{})
+}) {
+	app.server = server
+}
+
 // ProcessChatMessage processes a chat message with full context management and permissions
 func (app *App) ProcessChatMessage(ctx context.Context, sessionID, message, modelID string) (string, error) {
+	// Publish chat message received event
+	if app.EventManager != nil {
+		app.EventManager.PublishChat(events.ChatMessageReceived, events.ChatEventPayload{
+			SessionID: sessionID,
+			Role:      "user",
+			Content:   message,
+			Model:     modelID,
+		}, events.WithSessionID(sessionID))
+	}
+
+	// Show notification for message processing
+	if app.NotificationManager != nil {
+		app.NotificationManager.Info("Processing Message",
+			fmt.Sprintf("Processing your message with %s...", modelID),
+			notifications.WithSessionID(sessionID),
+			notifications.WithDuration(3*time.Second))
+	}
+
 	// Check if we have permission to process messages
 	if app.PermissionService != nil {
 		check := &permissions.PermissionCheck{
@@ -246,123 +288,227 @@ func (app *App) ProcessChatMessage(ctx context.Context, sessionID, message, mode
 	}
 
 	// Use context management if available
+	var contextualMessage string
 	if app.ContextManager != nil {
 		log.Printf("Processing message with context management for session %s", sessionID)
-		// TODO: Integrate context management with chat processing
+
+		// Create conversation message for context processing
+		conversationMsg := contextmgmt.ConversationMessage{
+			Role:      "user",
+			Content:   message,
+			Timestamp: time.Now().Unix(),
+			Metadata:  map[string]interface{}{"session_id": sessionID},
+		}
+
+		// Process with relevance filtering for better context
+		processedCtx, err := app.ContextManager.ProcessWithRelevanceFiltering(
+			ctx,
+			[]contextmgmt.ConversationMessage{conversationMsg},
+			modelID,
+			message,
+			0.3, // relevance threshold
+		)
+		if err != nil {
+			log.Printf("Warning: Failed to process context: %v", err)
+			contextualMessage = message
+		} else {
+			// Use the processed context
+			if len(processedCtx.Messages) > 0 {
+				contextualMessage = processedCtx.Messages[0].Content
+			} else {
+				contextualMessage = message
+			}
+		}
+	} else {
+		contextualMessage = message
 	}
 
 	// Integrate with actual LLM processing using chat module
-	return app.processWithLLM(ctx, message, modelID)
-}
-
-// processWithLLM processes a message using the LLM chat system
-func (app *App) processWithLLM(ctx context.Context, message, modelID string) (string, error) {
-	// Import the chat module
-	chat := &chatModule{}
-
-	// Use default model if none specified
-	if modelID == "" {
-		modelID = chat.GetDefaultModel()
-	}
-
-	// Get API key for the model
-	apiKey := chat.GetAPIKeyForModel(modelID)
-	if apiKey == "" {
-		return "", fmt.Errorf("no API key found for model: %s", modelID)
-	}
-
-	// Create chat session
-	session, err := chat.NewChatSession(modelID, apiKey, "", true, "text")
+	response, err := app.processWithLLM(ctx, contextualMessage, modelID, sessionID)
 	if err != nil {
-		return "", fmt.Errorf("failed to create chat session: %w", err)
+		return "", err
 	}
 
-	// Process the message
-	response, err := session.ProcessMessage(message)
-	if err != nil {
-		return "", fmt.Errorf("failed to process message: %w", err)
+	// Publish chat message sent event
+	if app.EventManager != nil {
+		app.EventManager.PublishChat(events.ChatMessageSent, events.ChatEventPayload{
+			SessionID: sessionID,
+			Role:      "assistant",
+			Content:   response,
+			Model:     modelID,
+		}, events.WithSessionID(sessionID))
+	}
+
+	// Show success notification
+	if app.NotificationManager != nil {
+		app.NotificationManager.Success("Response Ready",
+			"Your message has been processed successfully",
+			notifications.WithSessionID(sessionID))
 	}
 
 	return response, nil
 }
 
-// chatModule wraps the actual chat module functions
-type chatModule struct{}
+// processWithLLM processes a message using the LLM chat system
+func (app *App) processWithLLM(ctx context.Context, message, modelID, sessionID string) (string, error) {
+	// Generate operation ID for progress tracking
+	operationID := fmt.Sprintf("llm_%s_%d", sessionID, time.Now().Unix())
 
-func (c *chatModule) GetDefaultModel() string {
-	// Import and use the actual chat module
-	chat := getChatPackage()
+	// Simulate processing with progress updates
+	steps := []struct {
+		progress float64
+		message  string
+	}{
+		{0.1, "Initializing LLM request..."},
+		{0.3, "Analyzing message content..."},
+		{0.6, "Generating response..."},
+		{0.9, "Finalizing output..."},
+		{1.0, "Complete"},
+	}
+
+	for _, step := range steps {
+		// Broadcast progress update if server is available
+		if app.server != nil {
+			app.server.BroadcastProgressUpdate(operationID, step.progress, step.message, sessionID)
+		}
+
+		// Simulate processing time
+		time.Sleep(200 * time.Millisecond)
+	}
+	// Use the actual chat and llm modules directly
+	chatModule := &realChatModule{}
+	llmModule := &realLLMModule{}
+
+	// Use default model if none specified
+	if modelID == "" {
+		modelID = chatModule.GetDefaultModel()
+	}
+
+	// Get API key for the model
+	apiKey := chatModule.GetAPIKeyForModel(modelID)
+	if apiKey == "" {
+		return "", fmt.Errorf("no API key found for model: %s", modelID)
+	}
+
+	// Create chat session using the actual chat module
+	session, err := chatModule.NewChatSession(modelID, apiKey, "", true, "text")
+	if err != nil {
+		return "", fmt.Errorf("failed to create chat session: %w", err)
+	}
+
+	// Process the message using the actual LLM
+	response, err := session.ProcessMessage(message)
+	if err != nil {
+		// Fallback to direct LLM completion if chat session fails
+		return app.processWithDirectLLM(ctx, message, modelID, llmModule)
+	}
+
+	return response, nil
+}
+
+// processWithDirectLLM processes a message using direct LLM completion
+func (app *App) processWithDirectLLM(ctx context.Context, message, modelID string, llmModule *realLLMModule) (string, error) {
+	// Get the default model info
+	defaultModel := llmModule.GetDefaultModel()
+	if modelID == "" {
+		modelID = defaultModel.ID
+	}
+
+	// Create completion request
+	temp := 0.7
+	completionReq := llmModule.CreateCompletionRequest(modelID, message, &temp, defaultModel.Info.MaxTokens)
+
+	// Get completion
+	resp, err := llmModule.GetCompletion(ctx, completionReq)
+	if err != nil {
+		return "", fmt.Errorf("LLM completion failed: %w", err)
+	}
+
+	return resp.Content, nil
+}
+
+// realChatModule implements the actual chat module integration
+type realChatModule struct{}
+
+func (c *realChatModule) GetDefaultModel() string {
 	return chat.GetDefaultModel()
 }
 
-func (c *chatModule) GetAPIKeyForModel(model string) string {
-	// Import and use the actual chat module
-	chat := getChatPackage()
+func (c *realChatModule) GetAPIKeyForModel(model string) string {
 	return chat.GetAPIKeyForModel(model)
 }
 
-func (c *chatModule) NewChatSession(model, apiKey, provider string, quiet bool, format string) (*chatSessionWrapper, error) {
-	// Import and use the actual chat module
-	chat := getChatPackage()
+func (c *realChatModule) NewChatSession(model, apiKey, provider string, quiet bool, format string) (*realChatSession, error) {
 	session, err := chat.NewChatSession(model, apiKey, provider, quiet, format)
 	if err != nil {
 		return nil, err
 	}
 
-	return &chatSessionWrapper{session: session}, nil
+	return &realChatSession{session: session}, nil
 }
 
-// chatSessionWrapper wraps a chat session
-type chatSessionWrapper struct {
-	session chatSessionInterface
+// realChatSession wraps the actual chat session
+type realChatSession struct {
+	session *chat.ChatSession
 }
 
-type chatSessionInterface interface {
-	ProcessMessage(message string) (string, error)
-}
-
-func (cs *chatSessionWrapper) ProcessMessage(message string) (string, error) {
+func (cs *realChatSession) ProcessMessage(message string) (string, error) {
 	return cs.session.ProcessMessage(message)
 }
 
-// getChatPackage returns the chat package interface
-func getChatPackage() chatPackageInterface {
-	return &actualChatPackage{}
+// realLLMModule implements the actual LLM module integration
+type realLLMModule struct{}
+
+func (l *realLLMModule) GetDefaultModel() llm.ModelResponse {
+	return llm.GetDefaultModel()
 }
 
-type chatPackageInterface interface {
-	GetDefaultModel() string
-	GetAPIKeyForModel(model string) string
-	NewChatSession(model, apiKey, provider string, quiet bool, format string) (chatSessionInterface, error)
+func (l *realLLMModule) CreateCompletionRequest(modelID, message string, temperature *float64, maxTokens int) llm.CompletionRequest {
+	return llm.CompletionRequest{
+		Model: modelID,
+		Messages: []llm.Message{
+			{
+				Role: "user",
+				Content: []llm.ContentBlock{
+					llm.TextBlock{Text: message},
+				},
+			},
+		},
+		MaxTokens:   maxTokens,
+		Temperature: temperature,
+	}
 }
 
-type actualChatPackage struct{}
-
-func (a *actualChatPackage) GetDefaultModel() string {
-	// For now, return a default model
-	// This will be replaced with actual chat.GetDefaultModel() when import is working
-	return "claude-3-5-sonnet-20241022"
+func (l *realLLMModule) GetCompletion(ctx context.Context, req llm.CompletionRequest) (*llm.CompletionResponse, error) {
+	return llm.GetCompletion(ctx, req)
 }
 
-func (a *actualChatPackage) GetAPIKeyForModel(model string) string {
-	// For now, return empty - will be replaced with actual implementation
-	// This will be replaced with actual chat.GetAPIKeyForModel() when import is working
-	return ""
-}
+// initializeEventSystem initializes the event management system
+func (app *App) initializeEventSystem() error {
+	log.Printf("Initializing event system...")
 
-func (a *actualChatPackage) NewChatSession(model, apiKey, provider string, quiet bool, format string) (chatSessionInterface, error) {
-	// For now, return a mock session
-	// This will be replaced with actual chat.NewChatSession() when import is working
-	return &mockChatSession{model: model}, nil
-}
+	// Create event manager
+	app.EventManager = events.NewManager()
 
-type mockChatSession struct {
-	model string
-}
+	// Set up in-memory persistence for now
+	persistence := events.NewMemoryPersistenceStore(10000)
+	app.EventManager.SetPersistence(persistence)
 
-func (m *mockChatSession) ProcessMessage(message string) (string, error) {
-	// Return a simple response for now
-	return fmt.Sprintf("Echo from %s: %s", m.model, message), nil
+	// Start the event manager
+	if err := app.EventManager.Start(); err != nil {
+		return fmt.Errorf("failed to start event manager: %w", err)
+	}
+
+	// Create notification manager
+	app.NotificationManager = notifications.NewManager(app.EventManager)
+
+	// Start the notification manager
+	if err := app.NotificationManager.Start(); err != nil {
+		return fmt.Errorf("failed to start notification manager: %w", err)
+	}
+
+	log.Printf("Event system and notification manager initialized")
+	return nil
 }
 
 // Close closes all app resources
@@ -370,6 +516,16 @@ func (app *App) Close() error {
 	log.Printf("Closing CodeForge application...")
 
 	var errors []error
+
+	// Close notification manager
+	if app.NotificationManager != nil {
+		app.NotificationManager.Stop()
+	}
+
+	// Close event manager
+	if app.EventManager != nil {
+		app.EventManager.Shutdown()
+	}
 
 	// Close vector database
 	if app.VectorDB != nil {

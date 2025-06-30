@@ -125,7 +125,7 @@ func (dt *DependencyTracker) findDependencies(msg, prevMsg ConversationMessage, 
 }
 
 // findReferenceDepedency finds explicit references between messages
-func (dt *DependencyTracker) findReferenceDepedency(msg, prevMsg ConversationMessage, msgID, prevMsgID string) *Dependency {
+func (dt *DependencyTracker) findReferenceDepedency(msg, _ ConversationMessage, msgID, prevMsgID string) *Dependency {
 	content := strings.ToLower(msg.Content)
 
 	// Look for reference patterns

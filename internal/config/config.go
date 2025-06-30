@@ -133,6 +133,12 @@ type Config struct {
 	Models       map[string]ModelConfig            `json:"models,omitempty"` // Model-specific configurations
 	Context      ContextConfig                     `json:"context"`          // Context management configuration
 	Permissions  PermissionConfig                  `json:"permissions"`      // Permission system configuration
+
+	// Enhanced configuration managers (Phase 4)
+	ModelConfigManager *ModelConfigManager `json:"-"` // Enhanced model configuration manager
+	ProviderManager    *ProviderManager    `json:"-"` // Provider health and load balancing manager
+	CostTracker        *CostTracker        `json:"-"` // Cost tracking and optimization
+	ToolConfigManager  *ToolConfigManager  `json:"-"` // Tool configuration and security manager
 }
 
 // Application constants
@@ -187,6 +193,9 @@ func Load(workingDir string, debug bool) (*Config, error) {
 
 	// Set default agents based on available providers
 	setDefaultAgents()
+
+	// Initialize enhanced configuration managers (Phase 4)
+	initializeEnhancedManagers()
 
 	return cfg, nil
 }
@@ -519,4 +528,141 @@ func (c *Config) GetDuration(key, defaultValue string) time.Duration {
 // GetPermissionConfig returns the permission system configuration
 func (c *Config) GetPermissionConfig() PermissionConfig {
 	return c.Permissions
+}
+
+// initializeEnhancedManagers initializes the enhanced configuration managers for Phase 4
+func initializeEnhancedManagers() {
+	if cfg == nil {
+		return
+	}
+
+	// Initialize enhanced model configuration manager
+	cfg.ModelConfigManager = NewModelConfigManager()
+
+	// Initialize provider manager with health monitoring
+	cfg.ProviderManager = NewProviderManager()
+
+	// Initialize cost tracker for optimization
+	cfg.CostTracker = NewCostTracker()
+
+	// Initialize tool configuration manager
+	cfg.ToolConfigManager = NewToolConfigManager()
+
+	// Load existing model configurations into enhanced manager
+	for modelID, modelConfig := range cfg.Models {
+		enhancedConfig := &EnhancedModelConfig{
+			ContextWindow:      modelConfig.ContextWindow,
+			MaxOutputTokens:    modelConfig.MaxOutputTokens,
+			CostPer1KInput:     modelConfig.CostPer1KInput,
+			CostPer1KOutput:    modelConfig.CostPer1KOutput,
+			SupportsTools:      modelConfig.SupportsTools,
+			SupportsReasoning:  modelConfig.SupportsReasoning,
+			SummarizeThreshold: modelConfig.SummarizeThreshold,
+		}
+		cfg.ModelConfigManager.SetModelConfig(models.ModelID(modelID), enhancedConfig)
+	}
+
+	// Initialize provider configurations
+	for providerID := range cfg.Providers {
+		providerConfig := cfg.ProviderManager.GetProviderConfig(providerID)
+		cfg.ProviderManager.SetProviderConfig(providerID, providerConfig)
+	}
+
+	// Set up default budgets for cost tracking
+	cfg.CostTracker.SetBudget(PeriodHourly, 10.0)    // $10/hour default
+	cfg.CostTracker.SetBudget(PeriodDaily, 100.0)    // $100/day default
+	cfg.CostTracker.SetBudget(PeriodMonthly, 1000.0) // $1000/month default
+
+	// Create default tool configurations
+	defaultTools := []string{
+		"file_reader", "file_writer", "code_executor", "web_search",
+		"terminal", "git", "linter", "formatter", "package_manager",
+	}
+
+	for _, toolID := range defaultTools {
+		toolConfig := cfg.ToolConfigManager.GetToolConfig(toolID)
+		cfg.ToolConfigManager.SetToolConfig(toolID, toolConfig)
+	}
+}
+
+// GetEnhancedModelConfig returns enhanced model configuration
+func (c *Config) GetEnhancedModelConfig(modelID models.ModelID) *EnhancedModelConfig {
+	if c.ModelConfigManager == nil {
+		return nil
+	}
+	return c.ModelConfigManager.GetModelConfig(modelID)
+}
+
+// GetProviderConfig returns provider configuration with health status
+func (c *Config) GetProviderConfig(providerID models.ModelProvider) *EnhancedProviderConfig {
+	if c.ProviderManager == nil {
+		return nil
+	}
+	return c.ProviderManager.GetProviderConfig(providerID)
+}
+
+// GetToolConfig returns tool configuration with security settings
+func (c *Config) GetToolConfig(toolID string) *EnhancedToolConfig {
+	if c.ToolConfigManager == nil {
+		return nil
+	}
+	return c.ToolConfigManager.GetToolConfig(toolID)
+}
+
+// RecordTokenUsage records token usage for cost tracking and optimization
+func (c *Config) RecordTokenUsage(record TokenUsageRecord) error {
+	if c.CostTracker == nil {
+		return fmt.Errorf("cost tracker not initialized")
+	}
+	return c.CostTracker.RecordUsage(record)
+}
+
+// GetCostSummary returns cost summary for a specific period
+func (c *Config) GetCostSummary(period CostPeriod, startTime, endTime time.Time) *CostSummary {
+	if c.CostTracker == nil {
+		return nil
+	}
+	return c.CostTracker.GetCostSummary(period, startTime, endTime)
+}
+
+// IsWithinBudget checks if a cost would exceed the budget
+func (c *Config) IsWithinBudget(period CostPeriod, additionalCost float64) bool {
+	if c.CostTracker == nil {
+		return true // Allow if tracker not available
+	}
+	return c.CostTracker.IsWithinBudget(period, additionalCost)
+}
+
+// GetOptimizationRecommendations returns cost optimization recommendations
+func (c *Config) GetOptimizationRecommendations() []CostOptimizationRecommendation {
+	if c.CostTracker == nil {
+		return nil
+	}
+	return c.CostTracker.GetOptimizationRecommendations()
+}
+
+// SelectOptimalProvider selects the best provider based on load balancing strategy
+func (c *Config) SelectOptimalProvider(providers []models.ModelProvider, strategy LoadBalancingStrategy) (models.ModelProvider, error) {
+	if c.ProviderManager == nil {
+		if len(providers) > 0 {
+			return providers[0], nil // Fallback to first provider
+		}
+		return "", fmt.Errorf("no providers available")
+	}
+	return c.ProviderManager.SelectProvider(providers, strategy)
+}
+
+// ValidateToolExecution validates if a tool execution is allowed
+func (c *Config) ValidateToolExecution(toolID string, params map[string]any) error {
+	if c.ToolConfigManager == nil {
+		return nil // Allow if manager not available
+	}
+	return c.ToolConfigManager.ValidateToolExecution(toolID, params)
+}
+
+// RecordToolUsage records tool usage for analytics and security monitoring
+func (c *Config) RecordToolUsage(record ToolUsageRecord) {
+	if c.ToolConfigManager != nil {
+		c.ToolConfigManager.RecordToolUsage(record)
+	}
 }

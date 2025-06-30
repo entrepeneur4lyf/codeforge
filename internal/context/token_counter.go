@@ -173,11 +173,12 @@ func (tc *TokenCounter) CountMessageTokens(message ConversationMessage, model st
 	// Add role and metadata overhead (typically 3-5 tokens per message)
 	overhead := 4
 
-	if message.Role == "user" {
+	switch message.Role {
+	case "user":
 		usage.InputTokens = contentTokens + overhead
-	} else if message.Role == "assistant" {
+	case "assistant":
 		usage.OutputTokens = contentTokens + overhead
-	} else {
+	default:
 		usage.InputTokens = contentTokens + overhead
 	}
 

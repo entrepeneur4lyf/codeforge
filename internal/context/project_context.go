@@ -331,7 +331,7 @@ func (pc *ProjectContext) GetContextSummary() string {
 	}
 
 	if len(pc.Errors) > 0 {
-		summary.WriteString(fmt.Sprintf("\nErrors:\n"))
+		summary.WriteString("\nErrors:\n")
 		for _, err := range pc.Errors {
 			summary.WriteString(fmt.Sprintf("  • %s\n", err))
 		}
@@ -399,27 +399,24 @@ func (pcl *ProjectContextLoader) pollForChanges(callback func(*ProjectContext)) 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			pcl.mutex.RLock()
-			if pcl.watcher == nil || !pcl.watcher.active {
-				pcl.mutex.RUnlock()
-				return
-			}
+	for range ticker.C {
+		pcl.mutex.RLock()
+		if pcl.watcher == nil || !pcl.watcher.active {
 			pcl.mutex.RUnlock()
+			return
+		}
+		pcl.mutex.RUnlock()
 
-			// Check for changes
-			context, changed, err := pcl.RefreshIfNeeded()
-			if err != nil {
-				log.Printf("Error checking for context file changes: %v", err)
-				continue
-			}
+		// Check for changes
+		context, changed, err := pcl.RefreshIfNeeded()
+		if err != nil {
+			log.Printf("Error checking for context file changes: %v", err)
+			continue
+		}
 
-			if changed && callback != nil {
-				log.Printf("Context files changed, triggering callback")
-				callback(context)
-			}
+		if changed && callback != nil {
+			log.Printf("Context files changed, triggering callback")
+			callback(context)
 		}
 	}
 }

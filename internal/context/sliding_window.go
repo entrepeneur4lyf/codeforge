@@ -242,7 +242,7 @@ func (sw *SlidingWindow) OptimizeWindow(messages []ConversationMessage, modelID 
 }
 
 // optimizeMessageSelection applies intelligent message selection
-func (sw *SlidingWindow) optimizeMessageSelection(messages []ConversationMessage, modelID string) []ConversationMessage {
+func (sw *SlidingWindow) optimizeMessageSelection(messages []ConversationMessage, _ string) []ConversationMessage {
 	contextConfig := sw.config.GetContextConfig()
 	if contextConfig.RelevanceThreshold <= 0 {
 		return messages

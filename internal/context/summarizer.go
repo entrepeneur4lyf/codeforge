@@ -26,14 +26,14 @@ func NewSummarizer(cfg *config.Config) *Summarizer {
 
 // SummaryResult represents the result of summarization
 type SummaryResult struct {
-	Summary          string                `json:"summary"`
-	OriginalTokens   int                   `json:"original_tokens"`
-	SummaryTokens    int                   `json:"summary_tokens"`
-	CompressionRatio float64               `json:"compression_ratio"`
-	MessagesKept     int                   `json:"messages_kept"`
-	MessagesRemoved  int                   `json:"messages_removed"`
-	Timestamp        int64                 `json:"timestamp"`
-	Method           string                `json:"method"`
+	Summary          string                 `json:"summary"`
+	OriginalTokens   int                    `json:"original_tokens"`
+	SummaryTokens    int                    `json:"summary_tokens"`
+	CompressionRatio float64                `json:"compression_ratio"`
+	MessagesKept     int                    `json:"messages_kept"`
+	MessagesRemoved  int                    `json:"messages_removed"`
+	Timestamp        int64                  `json:"timestamp"`
+	Method           string                 `json:"method"`
 	Metadata         map[string]interface{} `json:"metadata"`
 }
 
@@ -45,7 +45,7 @@ func (s *Summarizer) SummarizeConversation(ctx context.Context, messages []Conve
 
 	// Count current tokens
 	originalUsage := s.tokenCounter.CountConversationTokens(messages, modelID)
-	
+
 	// Check if summarization is needed
 	if !s.config.ShouldSummarize(modelID, originalUsage.TotalTokens) {
 		return nil, fmt.Errorf("summarization not needed, current tokens: %d", originalUsage.TotalTokens)
@@ -55,7 +55,7 @@ func (s *Summarizer) SummarizeConversation(ctx context.Context, messages []Conve
 
 	// Find the last summary message to avoid re-summarizing
 	lastSummaryIndex := s.findLastSummaryIndex(messages)
-	
+
 	// Get messages to summarize (everything after last summary)
 	messagesToSummarize := messages
 	if lastSummaryIndex >= 0 {
@@ -74,7 +74,7 @@ func (s *Summarizer) SummarizeConversation(ctx context.Context, messages []Conve
 
 	// Count summary tokens
 	summaryTokens := s.tokenCounter.CountTokens(summary, modelID)
-	
+
 	// Calculate compression ratio
 	originalTokensToSummarize := s.tokenCounter.CountConversationTokens(messagesToSummarize, modelID).TotalTokens
 	compressionRatio := float64(summaryTokens) / float64(originalTokensToSummarize)
@@ -95,25 +95,25 @@ func (s *Summarizer) SummarizeConversation(ctx context.Context, messages []Conve
 		},
 	}
 
-	log.Printf("Summarization complete: %d tokens -> %d tokens (%.2f%% compression)", 
+	log.Printf("Summarization complete: %d tokens -> %d tokens (%.2f%% compression)",
 		originalTokensToSummarize, summaryTokens, compressionRatio*100)
 
 	return result, nil
 }
 
 // createSummary generates a summary of the conversation messages
-func (s *Summarizer) createSummary(ctx context.Context, messages []ConversationMessage, modelID string) (string, error) {
+func (s *Summarizer) createSummary(_ context.Context, messages []ConversationMessage, _ string) (string, error) {
 	// For now, implement a simple extractive summarization
 	// In production, this would call an LLM to generate a proper summary
-	
+
 	var summary strings.Builder
 	summary.WriteString("## Conversation Summary\n\n")
-	
+
 	// Extract key information from messages
 	userQuestions := []string{}
 	assistantResponses := []string{}
 	codeBlocks := []string{}
-	
+
 	for _, msg := range messages {
 		switch msg.Role {
 		case "user":
@@ -130,7 +130,7 @@ func (s *Summarizer) createSummary(ctx context.Context, messages []ConversationM
 			}
 		}
 	}
-	
+
 	// Build summary
 	if len(userQuestions) > 0 {
 		summary.WriteString("### User Requests:\n")
@@ -142,7 +142,7 @@ func (s *Summarizer) createSummary(ctx context.Context, messages []ConversationM
 		}
 		summary.WriteString("\n")
 	}
-	
+
 	if len(assistantResponses) > 0 {
 		summary.WriteString("### Key Responses:\n")
 		for i, response := range assistantResponses {
@@ -153,7 +153,7 @@ func (s *Summarizer) createSummary(ctx context.Context, messages []ConversationM
 		}
 		summary.WriteString("\n")
 	}
-	
+
 	if len(codeBlocks) > 0 {
 		summary.WriteString("### Code Examples:\n")
 		for i, code := range codeBlocks {
@@ -163,7 +163,7 @@ func (s *Summarizer) createSummary(ctx context.Context, messages []ConversationM
 			summary.WriteString(fmt.Sprintf("```\n%s\n```\n\n", s.truncateText(code, 200)))
 		}
 	}
-	
+
 	return summary.String(), nil
 }
 
@@ -183,13 +183,13 @@ func (s *Summarizer) findLastSummaryIndex(messages []ConversationMessage) int {
 func (s *Summarizer) extractKeyPoints(text string, maxLength int) string {
 	// Simple extraction - take first sentence or up to maxLength
 	text = strings.TrimSpace(text)
-	
+
 	// Find first sentence
 	sentences := strings.Split(text, ". ")
 	if len(sentences) > 0 && len(sentences[0]) <= maxLength {
 		return sentences[0]
 	}
-	
+
 	// Truncate to maxLength
 	return s.truncateText(text, maxLength)
 }
@@ -197,12 +197,12 @@ func (s *Summarizer) extractKeyPoints(text string, maxLength int) string {
 // extractCodeBlocks extracts code blocks from text
 func (s *Summarizer) extractCodeBlocks(text string) []string {
 	var blocks []string
-	
+
 	// Find code blocks marked with ```
 	lines := strings.Split(text, "\n")
 	var currentBlock strings.Builder
 	inBlock := false
-	
+
 	for _, line := range lines {
 		if strings.HasPrefix(line, "```") {
 			if inBlock {
@@ -220,7 +220,7 @@ func (s *Summarizer) extractCodeBlocks(text string) []string {
 			currentBlock.WriteString(line + "\n")
 		}
 	}
-	
+
 	return blocks
 }
 
@@ -229,11 +229,11 @@ func (s *Summarizer) truncateText(text string, maxLength int) string {
 	if len(text) <= maxLength {
 		return text
 	}
-	
+
 	if maxLength <= 3 {
 		return text[:maxLength]
 	}
-	
+
 	return text[:maxLength-3] + "..."
 }
 
@@ -256,7 +256,7 @@ func (s *Summarizer) ShouldSummarize(messages []ConversationMessage, modelID str
 	if !s.config.GetContextConfig().AutoSummarize {
 		return false
 	}
-	
+
 	usage := s.tokenCounter.CountConversationTokens(messages, modelID)
 	return s.config.ShouldSummarize(modelID, usage.TotalTokens)
 }

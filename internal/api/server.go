@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
@@ -14,22 +15,183 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// ConnectionManager manages active WebSocket connections
+type ConnectionManager struct {
+	chatConnections         map[string][]*ChatWebSocketClient
+	notificationConnections map[string][]*NotificationWebSocketClient
+	mu                      sync.RWMutex
+}
+
+// NewConnectionManager creates a new connection manager
+func NewConnectionManager() *ConnectionManager {
+	return &ConnectionManager{
+		chatConnections:         make(map[string][]*ChatWebSocketClient),
+		notificationConnections: make(map[string][]*NotificationWebSocketClient),
+	}
+}
+
+// AddChatConnection adds a chat WebSocket connection
+func (cm *ConnectionManager) AddChatConnection(sessionID string, client *ChatWebSocketClient) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.chatConnections[sessionID] = append(cm.chatConnections[sessionID], client)
+}
+
+// RemoveChatConnection removes a chat WebSocket connection
+func (cm *ConnectionManager) RemoveChatConnection(sessionID string, client *ChatWebSocketClient) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	connections := cm.chatConnections[sessionID]
+	for i, conn := range connections {
+		if conn == client {
+			cm.chatConnections[sessionID] = append(connections[:i], connections[i+1:]...)
+			break
+		}
+	}
+
+	if len(cm.chatConnections[sessionID]) == 0 {
+		delete(cm.chatConnections, sessionID)
+	}
+}
+
+// AddNotificationConnection adds a notification WebSocket connection
+func (cm *ConnectionManager) AddNotificationConnection(sessionID string, client *NotificationWebSocketClient) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.notificationConnections[sessionID] = append(cm.notificationConnections[sessionID], client)
+}
+
+// RemoveNotificationConnection removes a notification WebSocket connection
+func (cm *ConnectionManager) RemoveNotificationConnection(sessionID string, client *NotificationWebSocketClient) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	connections := cm.notificationConnections[sessionID]
+	for i, conn := range connections {
+		if conn == client {
+			cm.notificationConnections[sessionID] = append(connections[:i], connections[i+1:]...)
+			break
+		}
+	}
+
+	if len(cm.notificationConnections[sessionID]) == 0 {
+		delete(cm.notificationConnections, sessionID)
+	}
+}
+
+// BroadcastToSession broadcasts a message to all chat connections in a session
+func (cm *ConnectionManager) BroadcastToSession(sessionID string, message WebSocketMessage) {
+	cm.mu.RLock()
+	connections := make([]*ChatWebSocketClient, len(cm.chatConnections[sessionID]))
+	copy(connections, cm.chatConnections[sessionID])
+	cm.mu.RUnlock()
+
+	for _, conn := range connections {
+		select {
+		case conn.send <- message:
+		default:
+			// Connection is blocked, remove it
+			cm.RemoveChatConnection(sessionID, conn)
+		}
+	}
+}
+
+// GetConnectionStats returns connection statistics
+func (cm *ConnectionManager) GetConnectionStats() map[string]interface{} {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	chatCount := 0
+	notificationCount := 0
+
+	for _, connections := range cm.chatConnections {
+		chatCount += len(connections)
+	}
+
+	for _, connections := range cm.notificationConnections {
+		notificationCount += len(connections)
+	}
+
+	return map[string]interface{}{
+		"chat_connections":         chatCount,
+		"notification_connections": notificationCount,
+		"active_sessions":          len(cm.chatConnections),
+	}
+}
+
+// BroadcastSystemEvent broadcasts a system event to all connected chat clients
+func (cm *ConnectionManager) BroadcastSystemEvent(eventType string, payload interface{}) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	message := WebSocketMessage{
+		Type: "system_broadcast",
+		Data: map[string]interface{}{
+			"event_type": eventType,
+			"payload":    payload,
+			"timestamp":  time.Now().Unix(),
+		},
+	}
+
+	// Broadcast to all chat connections across all sessions
+	for sessionID, connections := range cm.chatConnections {
+		for _, conn := range connections {
+			select {
+			case conn.send <- message:
+			default:
+				// Connection is blocked, remove it
+				log.Printf("Removing blocked connection for session %s", sessionID)
+				go cm.RemoveChatConnection(sessionID, conn)
+			}
+		}
+	}
+}
+
+// BroadcastProgressUpdate broadcasts a progress update for long-running operations
+func (cm *ConnectionManager) BroadcastProgressUpdate(operationID string, progress float64, message string, sessionID string) {
+	progressMessage := WebSocketMessage{
+		Type: "progress_update",
+		Data: map[string]interface{}{
+			"operation_id": operationID,
+			"progress":     progress,
+			"message":      message,
+			"timestamp":    time.Now().Unix(),
+		},
+	}
+
+	if sessionID != "" {
+		// Broadcast to specific session
+		cm.BroadcastToSession(sessionID, progressMessage)
+	} else {
+		// Broadcast to all sessions
+		cm.mu.RLock()
+		defer cm.mu.RUnlock()
+
+		for sid := range cm.chatConnections {
+			cm.BroadcastToSession(sid, progressMessage)
+		}
+	}
+}
+
 // Server represents the API server
 type Server struct {
-	config      *config.Config
-	vectorDB    *vectordb.VectorDB
-	auth        *LocalhostAuth
-	upgrader    websocket.Upgrader
-	chatStorage *ChatStorage
-	app         *app.App // Integrated CodeForge application
+	config            *config.Config
+	vectorDB          *vectordb.VectorDB
+	auth              *LocalhostAuth
+	upgrader          websocket.Upgrader
+	chatStorage       *ChatStorage
+	app               *app.App // Integrated CodeForge application
+	connectionManager *ConnectionManager
 }
 
 // NewServer creates a new API server
 func NewServer(cfg *config.Config) *Server {
 	return &Server{
-		config:      cfg,
-		auth:        NewLocalhostAuth(),
-		chatStorage: NewChatStorage(),
+		config:            cfg,
+		auth:              NewLocalhostAuth(),
+		chatStorage:       NewChatStorage(),
+		connectionManager: NewConnectionManager(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// Only allow localhost connections for security
@@ -41,12 +203,13 @@ func NewServer(cfg *config.Config) *Server {
 
 // NewServerWithApp creates a new API server with integrated CodeForge app
 func NewServerWithApp(cfg *config.Config, codeforgeApp *app.App) *Server {
-	return &Server{
-		config:      cfg,
-		vectorDB:    codeforgeApp.VectorDB,
-		auth:        NewLocalhostAuth(),
-		chatStorage: NewChatStorage(),
-		app:         codeforgeApp,
+	server := &Server{
+		config:            cfg,
+		vectorDB:          codeforgeApp.VectorDB,
+		auth:              NewLocalhostAuth(),
+		chatStorage:       NewChatStorage(),
+		app:               codeforgeApp,
+		connectionManager: NewConnectionManager(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// Only allow localhost connections for security
@@ -54,6 +217,11 @@ func NewServerWithApp(cfg *config.Config, codeforgeApp *app.App) *Server {
 			},
 		},
 	}
+
+	// Set server reference in app for event broadcasting
+	codeforgeApp.SetServer(server)
+
+	return server
 }
 
 // isLocalhostOrigin checks if the WebSocket origin is localhost
@@ -133,9 +301,15 @@ func (s *Server) setupRoutes() *mux.Router {
 	// WebSocket for real-time chat (protected via token in URL)
 	protected.HandleFunc("/chat/ws/{sessionId}", s.handleChatWebSocket)
 
+	// WebSocket for real-time notifications (protected via token in URL)
+	protected.HandleFunc("/notifications/ws/{sessionId}", s.handleNotificationWebSocket)
+
 	// SSE for metrics and status (protected)
 	protected.HandleFunc("/events/metrics", s.handleMetricsSSE)
 	protected.HandleFunc("/events/status", s.handleStatusSSE)
+
+	// WebSocket connection management (protected)
+	protected.HandleFunc("/websocket/stats", s.handleWebSocketStats).Methods("GET")
 
 	// Project and file management (protected)
 	protected.HandleFunc("/project/structure", s.handleProjectStructure).Methods("GET")
@@ -213,4 +387,25 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	s.writeJSON(w, health)
+}
+
+// handleWebSocketStats returns WebSocket connection statistics
+func (s *Server) handleWebSocketStats(w http.ResponseWriter, r *http.Request) {
+	stats := s.connectionManager.GetConnectionStats()
+	stats["timestamp"] = time.Now().Unix()
+	s.writeJSON(w, stats)
+}
+
+// BroadcastSystemEvent broadcasts a system event to all connected clients
+func (s *Server) BroadcastSystemEvent(eventType string, payload interface{}) {
+	if s.connectionManager != nil {
+		s.connectionManager.BroadcastSystemEvent(eventType, payload)
+	}
+}
+
+// BroadcastProgressUpdate broadcasts a progress update for long-running operations
+func (s *Server) BroadcastProgressUpdate(operationID string, progress float64, message string, sessionID string) {
+	if s.connectionManager != nil {
+		s.connectionManager.BroadcastProgressUpdate(operationID, progress, message, sessionID)
+	}
 }

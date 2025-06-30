@@ -218,11 +218,6 @@ func (cm *ContextManager) applySummary(messages []ConversationMessage, summary *
 	return result
 }
 
-// generateCacheKey creates a cache key for the conversation
-func (cm *ContextManager) generateCacheKey(messages []ConversationMessage, modelID string) string {
-	return cm.generateCacheKeyWithOptions(messages, modelID, ProcessingOptions{})
-}
-
 // generateCacheKeyWithOptions creates a cache key including processing options
 func (cm *ContextManager) generateCacheKeyWithOptions(messages []ConversationMessage, modelID string, options ProcessingOptions) string {
 	// Create a hash based on message content, model, and options

@@ -1,11 +1,12 @@
 package api
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"net/http"
 	"time"
 
+	"github.com/entrepeneur4lyf/codeforge/internal/events"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
@@ -16,6 +17,7 @@ type ChatWebSocketClient struct {
 	sessionID string
 	send      chan WebSocketMessage
 	server    *Server
+	cancel    context.CancelFunc
 }
 
 // handleChatWebSocket handles WebSocket connections for real-time chat
@@ -30,24 +32,37 @@ func (s *Server) handleChatWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create context for cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+
 	// Create client
 	client := &ChatWebSocketClient{
 		conn:      conn,
 		sessionID: sessionID,
 		send:      make(chan WebSocketMessage, 256),
 		server:    s,
+		cancel:    cancel,
 	}
 
 	log.Printf("🔌 WebSocket client connected for session: %s", sessionID)
 
+	// Register connection with connection manager
+	s.connectionManager.AddChatConnection(sessionID, client)
+
+	// Replay missed events for offline users
+	go client.replayMissedEvents()
+
 	// Start client goroutines
 	go client.writePump()
 	go client.readPump()
+	go client.subscribeToEvents(ctx)
 }
 
 // readPump handles incoming WebSocket messages
 func (c *ChatWebSocketClient) readPump() {
 	defer func() {
+		c.cancel()
+		c.server.connectionManager.RemoveChatConnection(c.sessionID, c)
 		c.conn.Close()
 		log.Printf("🔌 WebSocket client disconnected for session: %s", c.sessionID)
 	}()
@@ -171,9 +186,25 @@ func (c *ChatWebSocketClient) processMessage(message string, eventID string) {
 		return
 	}
 
-	// Use the chat engine to generate a response
-	// This simulates the actual LLM integration that would happen here
-	responseContent := c.generateChatResponse(message, session)
+	// Use the integrated CodeForge app for real chat processing
+	var responseContent string
+	if c.server.app != nil {
+		ctx := context.Background()
+		modelID := session.Model
+		if modelID == "" {
+			modelID = "default"
+		}
+
+		response, err := c.server.app.ProcessChatMessage(ctx, c.sessionID, message, modelID)
+		if err != nil {
+			log.Printf("Chat processing error: %v", err)
+			responseContent = "I apologize, but I encountered an error processing your message. Please try again."
+		} else {
+			responseContent = response
+		}
+	} else {
+		responseContent = "Chat processing is not available - app not initialized"
+	}
 
 	// Create assistant response
 	response := ChatMessage{
@@ -245,41 +276,6 @@ func (c *ChatWebSocketClient) sendMessage(msg WebSocketMessage) {
 	}
 }
 
-// generateChatResponse generates a chat response using the configured model
-func (c *ChatWebSocketClient) generateChatResponse(message string, session *ChatSession) string {
-	// This is a simplified implementation
-	// In production, this would integrate with the actual LLM providers
-
-	// Simulate processing time
-	time.Sleep(1 * time.Second)
-
-	// Generate a contextual response based on the session's model and provider
-	model := session.Model
-	provider := session.Provider
-
-	if model == "" {
-		model = "default"
-	}
-	if provider == "" {
-		provider = "default"
-	}
-
-	// Simple response generation based on message content
-	responses := []string{
-		"I understand you're asking about: " + message,
-		"That's an interesting question about: " + message,
-		"Let me help you with: " + message,
-		"I can assist you with: " + message,
-	}
-
-	// Use message length to pick a response (simple deterministic approach)
-	responseIndex := len(message) % len(responses)
-	baseResponse := responses[responseIndex]
-
-	// Add model/provider context
-	return baseResponse + fmt.Sprintf(" (via %s/%s through WebSocket)", provider, model)
-}
-
 // sendError sends an error message to the WebSocket client
 func (c *ChatWebSocketClient) sendError(error string, eventID string) {
 	c.sendMessage(WebSocketMessage{
@@ -287,4 +283,255 @@ func (c *ChatWebSocketClient) sendError(error string, eventID string) {
 		Error:   error,
 		EventID: eventID,
 	})
+}
+
+// subscribeToEvents subscribes to chat and system events for this session
+func (c *ChatWebSocketClient) subscribeToEvents(ctx context.Context) {
+	if c.server.app == nil || c.server.app.EventManager == nil {
+		log.Printf("Event manager not available for chat event subscription")
+		return
+	}
+
+	// Subscribe to chat events for this session
+	chatCh := c.server.app.EventManager.SubscribeChat(ctx,
+		events.FilterBySessionID(c.sessionID))
+
+	// Subscribe to system events (no session filter for system-wide events)
+	systemCh := c.server.app.EventManager.SubscribeSystem(ctx)
+
+	for {
+		select {
+		case chatEvent, ok := <-chatCh:
+			if !ok {
+				return
+			}
+
+			// Convert chat event to WebSocket message
+			wsMsg := WebSocketMessage{
+				Type:    "chat_event",
+				EventID: chatEvent.ID,
+				Data: map[string]interface{}{
+					"event_type": chatEvent.Type,
+					"payload":    chatEvent.Payload,
+					"timestamp":  chatEvent.Timestamp.Unix(),
+					"session_id": chatEvent.SessionID,
+				},
+			}
+
+			// Send to WebSocket client
+			select {
+			case c.send <- wsMsg:
+			default:
+				log.Printf("Chat event channel full for session %s", c.sessionID)
+			}
+
+		case systemEvent, ok := <-systemCh:
+			if !ok {
+				return
+			}
+
+			// Convert system event to WebSocket message
+			wsMsg := WebSocketMessage{
+				Type:    "system_event",
+				EventID: systemEvent.ID,
+				Data: map[string]interface{}{
+					"event_type": systemEvent.Type,
+					"payload":    systemEvent.Payload,
+					"timestamp":  systemEvent.Timestamp.Unix(),
+					"user_id":    systemEvent.UserID,
+				},
+			}
+
+			// Send to WebSocket client
+			select {
+			case c.send <- wsMsg:
+			default:
+				log.Printf("System event channel full for session %s", c.sessionID)
+			}
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// replayMissedEvents replays events that occurred while the client was offline
+func (c *ChatWebSocketClient) replayMissedEvents() {
+	if c.server.app == nil || c.server.app.EventManager == nil {
+		return
+	}
+
+	// Get the last 24 hours of events for this session
+	since := time.Now().Add(-24 * time.Hour)
+
+	// Get missed chat events
+	if chatEvents, err := c.server.app.EventManager.GetEventsForSession(c.sessionID, since); err == nil {
+		for _, event := range chatEvents {
+			// Only replay certain event types to avoid spam
+			if event.Type == events.ChatMessageSent || event.Type == events.ChatMessageReceived {
+				wsMsg := WebSocketMessage{
+					Type:    "replay_event",
+					EventID: event.ID,
+					Data: map[string]interface{}{
+						"event_type": event.Type,
+						"payload":    event.Payload,
+						"timestamp":  event.Timestamp.Unix(),
+						"session_id": event.SessionID,
+						"replayed":   true,
+					},
+				}
+
+				// Send replayed event
+				select {
+				case c.send <- wsMsg:
+				default:
+					// Channel full, skip this event
+					log.Printf("Skipping replay event for session %s - channel full", c.sessionID)
+					return
+				}
+			}
+		}
+	}
+
+	// Send replay complete notification
+	c.sendMessage(WebSocketMessage{
+		Type: "replay_complete",
+		Data: map[string]interface{}{
+			"session_id": c.sessionID,
+			"timestamp":  time.Now().Unix(),
+		},
+	})
+}
+
+// NotificationWebSocketClient represents a WebSocket client for notifications
+type NotificationWebSocketClient struct {
+	conn      *websocket.Conn
+	sessionID string
+	send      chan interface{}
+	server    *Server
+	cancel    context.CancelFunc
+}
+
+// handleNotificationWebSocket handles WebSocket connections for real-time notifications
+func (s *Server) handleNotificationWebSocket(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sessionID := vars["sessionId"]
+
+	// Upgrade HTTP connection to WebSocket
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Notification WebSocket upgrade failed: %v", err)
+		return
+	}
+
+	// Create context for cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create client
+	client := &NotificationWebSocketClient{
+		conn:      conn,
+		sessionID: sessionID,
+		send:      make(chan interface{}, 256),
+		server:    s,
+		cancel:    cancel,
+	}
+
+	log.Printf("🔔 Notification WebSocket client connected for session: %s", sessionID)
+
+	// Register connection with connection manager
+	s.connectionManager.AddNotificationConnection(sessionID, client)
+
+	// Start client goroutines
+	go client.writePump()
+	go client.readPump()
+	go client.subscribeToNotifications(ctx)
+}
+
+// subscribeToNotifications subscribes to notification events for this session
+func (c *NotificationWebSocketClient) subscribeToNotifications(ctx context.Context) {
+	if c.server.app == nil || c.server.app.EventManager == nil {
+		log.Printf("Event manager not available for notification subscription")
+		return
+	}
+
+	// Subscribe to notification events for this session
+	notificationCh := c.server.app.EventManager.SubscribeNotification(ctx,
+		events.FilterBySessionID(c.sessionID))
+
+	for {
+		select {
+		case notification, ok := <-notificationCh:
+			if !ok {
+				return
+			}
+
+			// Send notification to WebSocket client
+			select {
+			case c.send <- notification:
+			default:
+				log.Printf("Notification channel full for session %s", c.sessionID)
+			}
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// readPump handles incoming WebSocket messages for notifications
+func (c *NotificationWebSocketClient) readPump() {
+	defer func() {
+		c.cancel()
+		c.server.connectionManager.RemoveNotificationConnection(c.sessionID, c)
+		c.conn.Close()
+		log.Printf("🔔 Notification WebSocket client disconnected for session: %s", c.sessionID)
+	}()
+
+	c.conn.SetReadLimit(512)
+	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.conn.SetPongHandler(func(string) error {
+		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	for {
+		_, _, err := c.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("Notification WebSocket error: %v", err)
+			}
+			break
+		}
+	}
+}
+
+// writePump handles outgoing WebSocket messages for notifications
+func (c *NotificationWebSocketClient) writePump() {
+	ticker := time.NewTicker(54 * time.Second)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+
+	for {
+		select {
+		case message, ok := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if !ok {
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			if err := c.conn.WriteJSON(message); err != nil {
+				log.Printf("Notification WebSocket write error: %v", err)
+				return
+			}
+
+		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
 }
