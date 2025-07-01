@@ -198,6 +198,11 @@ func Load(workingDir string, debug bool) (*Config, error) {
 	// Initialize enhanced configuration managers (Phase 4)
 	initializeEnhancedManagers()
 
+	// Ensure Data.Directory is set if empty
+	if cfg.Data.Directory == "" {
+		cfg.Data.Directory = defaultDataDirectory
+	}
+
 	return cfg, nil
 }
 

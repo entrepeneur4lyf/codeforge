@@ -2,8 +2,12 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -183,4 +187,93 @@ func (h *AnthropicSDKHandler) getDefaultModelInfo(modelID string) llm.ModelInfo 
 		OutputPrice:         15.0,   // Default pricing per million tokens
 		Description:         "Anthropic Claude model",
 	}
+}
+
+// AnthropicModelInfo represents model information from Anthropic
+type AnthropicModelInfo struct {
+	ID          string  `json:"id"`
+	DisplayName string  `json:"display_name"`
+	Type        string  `json:"type"`
+	CreatedAt   string  `json:"created_at"`
+	MaxTokens   int     `json:"max_tokens"`
+	InputPrice  float64 `json:"input_price"`
+	OutputPrice float64 `json:"output_price"`
+}
+
+// GetAnthropicModels returns available Anthropic models (hardcoded since Anthropic doesn't have a public models API)
+func GetAnthropicModels(ctx context.Context, apiKey string) ([]AnthropicModelInfo, error) {
+	return getCachedAnthropicModels(ctx, apiKey, false)
+}
+
+// getCachedAnthropicModels returns cached models if available and fresh
+func getCachedAnthropicModels(ctx context.Context, apiKey string, forceRefresh bool) ([]AnthropicModelInfo, error) {
+	cacheDir := filepath.Join(os.Getenv("HOME"), ".codeforge", "cache")
+	cacheFile := filepath.Join(cacheDir, "anthropic_models.json")
+
+	// Check cache first (unless force refresh)
+	if !forceRefresh {
+		if info, err := os.Stat(cacheFile); err == nil {
+			if time.Since(info.ModTime()) < 24*time.Hour {
+				// Load from cache
+				data, err := os.ReadFile(cacheFile)
+				if err == nil {
+					var models []AnthropicModelInfo
+					if json.Unmarshal(data, &models) == nil {
+						return models, nil
+					}
+				}
+			}
+		}
+	}
+
+	// Anthropic doesn't have a public models API, so we use hardcoded models
+	models := []AnthropicModelInfo{
+		{
+			ID: "claude-3-5-sonnet-20241022", DisplayName: "Claude 3.5 Sonnet", Type: "text",
+			CreatedAt: "2024-10-22", MaxTokens: 8192, InputPrice: 3.0, OutputPrice: 15.0,
+		},
+		{
+			ID: "claude-3-5-haiku-20241022", DisplayName: "Claude 3.5 Haiku", Type: "text",
+			CreatedAt: "2024-10-22", MaxTokens: 8192, InputPrice: 0.8, OutputPrice: 4.0,
+		},
+		{
+			ID: "claude-3-opus-20240229", DisplayName: "Claude 3 Opus", Type: "text",
+			CreatedAt: "2024-02-29", MaxTokens: 4096, InputPrice: 15.0, OutputPrice: 75.0,
+		},
+		{
+			ID: "claude-3-sonnet-20240229", DisplayName: "Claude 3 Sonnet", Type: "text",
+			CreatedAt: "2024-02-29", MaxTokens: 4096, InputPrice: 3.0, OutputPrice: 15.0,
+		},
+		{
+			ID: "claude-3-haiku-20240307", DisplayName: "Claude 3 Haiku", Type: "text",
+			CreatedAt: "2024-03-07", MaxTokens: 4096, InputPrice: 0.25, OutputPrice: 1.25,
+		},
+	}
+
+	// Cache the results
+	if err := os.MkdirAll(cacheDir, 0755); err == nil {
+		if data, err := json.Marshal(models); err == nil {
+			os.WriteFile(cacheFile, data, 0644)
+		}
+	}
+
+	return models, nil
+}
+
+// RefreshAnthropicModelsAsync refreshes Anthropic models in the background
+func RefreshAnthropicModelsAsync(apiKey string) {
+	if apiKey == "" {
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		_, err := getCachedAnthropicModels(ctx, apiKey, true)
+		if err != nil {
+			// Silent failure for background refresh
+			fmt.Printf("Background Anthropic model refresh failed: %v\n", err)
+		}
+	}()
 }

@@ -177,19 +177,25 @@ type OpenAIModelsResponse struct {
 
 // GetOpenAIModels fetches available models from OpenAI API and caches them
 func GetOpenAIModels(ctx context.Context, apiKey string) ([]OpenAIModelInfo, error) {
-	// Check cache first
+	return getCachedOpenAIModels(ctx, apiKey, false)
+}
+
+// GetCachedOpenAIModels returns cached models if available and fresh, otherwise fetches from API
+func getCachedOpenAIModels(ctx context.Context, apiKey string, forceRefresh bool) ([]OpenAIModelInfo, error) {
 	cacheDir := filepath.Join(os.Getenv("HOME"), ".codeforge", "cache")
 	cacheFile := filepath.Join(cacheDir, "openai_models.json")
 
-	// Check if cache exists and is recent (24 hours)
-	if info, err := os.Stat(cacheFile); err == nil {
-		if time.Since(info.ModTime()) < 24*time.Hour {
-			// Load from cache
-			data, err := os.ReadFile(cacheFile)
-			if err == nil {
-				var models []OpenAIModelInfo
-				if json.Unmarshal(data, &models) == nil {
-					return models, nil
+	// Check cache first (unless force refresh)
+	if !forceRefresh {
+		if info, err := os.Stat(cacheFile); err == nil {
+			if time.Since(info.ModTime()) < 24*time.Hour {
+				// Load from cache
+				data, err := os.ReadFile(cacheFile)
+				if err == nil {
+					var models []OpenAIModelInfo
+					if json.Unmarshal(data, &models) == nil {
+						return models, nil
+					}
 				}
 			}
 		}
@@ -225,4 +231,22 @@ func GetOpenAIModels(ctx context.Context, apiKey string) ([]OpenAIModelInfo, err
 	}
 
 	return models, nil
+}
+
+// RefreshOpenAIModelsAsync refreshes OpenAI models in the background
+func RefreshOpenAIModelsAsync(apiKey string) {
+	if apiKey == "" {
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		_, err := getCachedOpenAIModels(ctx, apiKey, true)
+		if err != nil {
+			// Silent failure for background refresh
+			fmt.Printf("Background OpenAI model refresh failed: %v\n", err)
+		}
+	}()
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/chat"
 	"github.com/entrepeneur4lyf/codeforge/internal/embeddings"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
+	"github.com/entrepeneur4lyf/codeforge/internal/llm/providers"
 	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
 	"github.com/entrepeneur4lyf/codeforge/internal/ml"
 	"github.com/entrepeneur4lyf/codeforge/internal/project"
@@ -264,6 +265,9 @@ Features:
 		if err := llm.Initialize(codeforgeApp.Config); err != nil {
 			return fmt.Errorf("failed to initialize LLM providers: %w", err)
 		}
+
+		// Start background model fetching for all providers
+		providers.InitializeBackgroundFetching()
 
 		// Initialize embedding service
 		if err := embeddings.Initialize(codeforgeApp.Config); err != nil {

@@ -37,7 +37,7 @@ func BuildApiHandler(options llm.ApiHandlerOptions) (llm.ApiHandler, error) {
 	case llm.ProviderOpenAI:
 		handler = NewOpenAISDKHandler(options)
 	case llm.ProviderGemini:
-		handler = NewGeminiHandler(options)
+		handler = NewGeminiSDKHandler(options)
 	case llm.ProviderOpenRouter:
 		handler = NewOpenRouterSDKHandler(options)
 	case llm.ProviderBedrock:

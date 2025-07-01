@@ -756,24 +756,9 @@ func (ms *ModelSelector) loadDefaultModels(providerID string) []ModelInfo {
 	var models []ModelInfo
 
 	defaults := map[string][]ModelInfo{
-		"anthropic": {
-			{
-				Name: "Claude 3.5 Sonnet", ID: "claude-3-5-sonnet-20241022", Provider: providerID,
-				Description: "Most intelligent model for complex reasoning", ContextLength: 200000,
-				InputPrice: 3.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "reasoning"},
-			},
-			{
-				Name: "Claude 3.5 Haiku", ID: "claude-3-5-haiku-20241022", Provider: providerID,
-				Description: "Fastest model for simple tasks", ContextLength: 200000,
-				InputPrice: 0.25, OutputPrice: 1.25, Capabilities: []string{"text", "code", "speed"},
-			},
-			{
-				Name: "Claude 3 Opus", ID: "claude-3-opus-20240229", Provider: providerID,
-				Description: "Most powerful model for complex tasks", ContextLength: 200000,
-				InputPrice: 15.0, OutputPrice: 75.0, Capabilities: []string{"text", "code", "vision", "reasoning"},
-			},
-		},
-		"openai": ms.loadOpenAIModels(providerID),
+		"anthropic": ms.loadAnthropicModels(providerID),
+		"openai":    ms.loadOpenAIModels(providerID),
+		"gemini":    ms.loadGeminiModels(providerID),
 		"openrouter": {
 			{
 				Name: "Claude 3.5 Sonnet", ID: "anthropic/claude-3.5-sonnet", Provider: providerID,
@@ -798,109 +783,262 @@ func (ms *ModelSelector) loadDefaultModels(providerID string) []ModelInfo {
 	return models
 }
 
-// loadOpenAIModels loads OpenAI models dynamically using the SDK
+// loadOpenAIModels loads OpenAI models from cache (populated by background fetcher)
 func (ms *ModelSelector) loadOpenAIModels(providerID string) []ModelInfo {
 	// Try to get OpenAI API key
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		// Return fallback models if no API key
-		return []ModelInfo{
-			{
-				Name: "GPT-4o (Latest)", ID: "gpt-4o", Provider: providerID,
-				Description: "Multimodal flagship model", ContextLength: 128000,
-				InputPrice: 5.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "audio"},
-			},
-			{
-				Name: "GPT-4o Mini (Latest)", ID: "gpt-4o-mini", Provider: providerID,
-				Description: "Affordable and intelligent small model", ContextLength: 128000,
-				InputPrice: 0.15, OutputPrice: 0.6, Capabilities: []string{"text", "code", "speed"},
-			},
-		}
+		return ms.getOpenAIFallbackModels(providerID)
 	}
 
-	// Fetch models from OpenAI API
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
+	// Get models from cache (no timeout needed since it's just reading from cache)
+	ctx := context.Background()
 	openaiModels, err := providers.GetOpenAIModels(ctx, apiKey)
 	if err != nil {
 		// Return fallback models on error
-		return []ModelInfo{
-			{
-				Name: "GPT-4o (Latest)", ID: "gpt-4o", Provider: providerID,
-				Description: "Multimodal flagship model", ContextLength: 128000,
-				InputPrice: 5.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "audio"},
-			},
-			{
-				Name: "GPT-4o Mini (Latest)", ID: "gpt-4o-mini", Provider: providerID,
-				Description: "Affordable and intelligent small model", ContextLength: 128000,
-				InputPrice: 0.15, OutputPrice: 0.6, Capabilities: []string{"text", "code", "speed"},
-			},
-		}
+		return ms.getOpenAIFallbackModels(providerID)
 	}
 
 	// Convert OpenAI models to ModelInfo
 	var models []ModelInfo
 	for _, model := range openaiModels {
-		// Create user-friendly name
-		name := strings.ReplaceAll(model.ID, "-", " ")
-		// Convert to title case manually since strings.Title is deprecated
-		words := strings.Fields(name)
-		for i, word := range words {
-			if len(word) > 0 {
-				words[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
-			}
-		}
-		name = strings.Join(words, " ")
-
-		// Set default pricing and capabilities based on model type
-		var inputPrice, outputPrice float64
-		var capabilities []string
-		var contextLength int
-		var description string
-
-		switch {
-		case strings.Contains(model.ID, "gpt-4o"):
-			inputPrice, outputPrice = 5.0, 15.0
-			capabilities = []string{"text", "code", "vision", "audio"}
-			contextLength = 128000
-			description = "Multimodal flagship model"
-		case strings.Contains(model.ID, "gpt-4"):
-			inputPrice, outputPrice = 30.0, 60.0
-			capabilities = []string{"text", "code", "reasoning"}
-			contextLength = 128000
-			description = "Advanced reasoning model"
-		case strings.Contains(model.ID, "o1"):
-			inputPrice, outputPrice = 15.0, 60.0
-			capabilities = []string{"reasoning", "complex-tasks"}
-			contextLength = 128000
-			description = "Advanced reasoning model"
-		case strings.Contains(model.ID, "gpt-3.5"):
-			inputPrice, outputPrice = 0.5, 1.5
-			capabilities = []string{"text", "code", "speed"}
-			contextLength = 16000
-			description = "Fast and efficient model"
-		default:
-			inputPrice, outputPrice = 2.5, 10.0
-			capabilities = []string{"text", "code"}
-			contextLength = 128000
-			description = "OpenAI model"
-		}
-
-		modelInfo := ModelInfo{
-			Name:          name,
-			ID:            model.ID,
-			Provider:      providerID,
-			Description:   description,
-			ContextLength: contextLength,
-			InputPrice:    inputPrice,
-			OutputPrice:   outputPrice,
-			Capabilities:  capabilities,
-			Favorite:      ms.favorites.IsModelFavorite(model.ID),
-		}
-
+		modelInfo := ms.convertOpenAIModelToModelInfo(model, providerID)
 		models = append(models, modelInfo)
 	}
 
+	// If no models found, return fallback
+	if len(models) == 0 {
+		return ms.getOpenAIFallbackModels(providerID)
+	}
+
 	return models
+}
+
+// getOpenAIFallbackModels returns fallback OpenAI models
+func (ms *ModelSelector) getOpenAIFallbackModels(providerID string) []ModelInfo {
+	return []ModelInfo{
+		{
+			Name: "GPT-4o (Latest)", ID: "gpt-4o", Provider: providerID,
+			Description: "Multimodal flagship model", ContextLength: 128000,
+			InputPrice: 5.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "audio"},
+			Favorite: ms.favorites.IsModelFavorite("gpt-4o"),
+		},
+		{
+			Name: "GPT-4o Mini (Latest)", ID: "gpt-4o-mini", Provider: providerID,
+			Description: "Affordable and intelligent small model", ContextLength: 128000,
+			InputPrice: 0.15, OutputPrice: 0.6, Capabilities: []string{"text", "code", "speed"},
+			Favorite: ms.favorites.IsModelFavorite("gpt-4o-mini"),
+		},
+	}
+}
+
+// convertOpenAIModelToModelInfo converts an OpenAI model to ModelInfo
+func (ms *ModelSelector) convertOpenAIModelToModelInfo(model providers.OpenAIModelInfo, providerID string) ModelInfo {
+	// Create user-friendly name
+	name := strings.ReplaceAll(model.ID, "-", " ")
+	// Convert to title case manually since strings.Title is deprecated
+	words := strings.Fields(name)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
+		}
+	}
+	name = strings.Join(words, " ")
+
+	// Set default pricing and capabilities based on model type
+	var inputPrice, outputPrice float64
+	var capabilities []string
+	var contextLength int
+	var description string
+
+	switch {
+	case strings.Contains(model.ID, "gpt-4o"):
+		inputPrice, outputPrice = 5.0, 15.0
+		capabilities = []string{"text", "code", "vision", "audio"}
+		contextLength = 128000
+		description = "Multimodal flagship model"
+	case strings.Contains(model.ID, "gpt-4"):
+		inputPrice, outputPrice = 30.0, 60.0
+		capabilities = []string{"text", "code", "reasoning"}
+		contextLength = 128000
+		description = "Advanced reasoning model"
+	case strings.Contains(model.ID, "o1"):
+		inputPrice, outputPrice = 15.0, 60.0
+		capabilities = []string{"reasoning", "complex-tasks"}
+		contextLength = 128000
+		description = "Advanced reasoning model"
+	case strings.Contains(model.ID, "gpt-3.5"):
+		inputPrice, outputPrice = 0.5, 1.5
+		capabilities = []string{"text", "code", "speed"}
+		contextLength = 16000
+		description = "Fast and efficient model"
+	default:
+		inputPrice, outputPrice = 2.5, 10.0
+		capabilities = []string{"text", "code"}
+		contextLength = 128000
+		description = "OpenAI model"
+	}
+
+	return ModelInfo{
+		Name:          name,
+		ID:            model.ID,
+		Provider:      providerID,
+		Description:   description,
+		ContextLength: contextLength,
+		InputPrice:    inputPrice,
+		OutputPrice:   outputPrice,
+		Capabilities:  capabilities,
+		Favorite:      ms.favorites.IsModelFavorite(model.ID),
+	}
+}
+
+// loadAnthropicModels loads Anthropic models from cache (populated by background fetcher)
+func (ms *ModelSelector) loadAnthropicModels(providerID string) []ModelInfo {
+	// Try to get Anthropic API key
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		// Return fallback models if no API key
+		return ms.getAnthropicFallbackModels(providerID)
+	}
+
+	// Get models from cache (no timeout needed since it's just reading from cache)
+	ctx := context.Background()
+	anthropicModels, err := providers.GetAnthropicModels(ctx, apiKey)
+	if err != nil {
+		// Return fallback models on error
+		return ms.getAnthropicFallbackModels(providerID)
+	}
+
+	// Convert Anthropic models to ModelInfo
+	var models []ModelInfo
+	for _, model := range anthropicModels {
+		modelInfo := ms.convertAnthropicModelToModelInfo(model, providerID)
+		models = append(models, modelInfo)
+	}
+
+	// If no models found, return fallback
+	if len(models) == 0 {
+		return ms.getAnthropicFallbackModels(providerID)
+	}
+
+	return models
+}
+
+// getAnthropicFallbackModels returns fallback Anthropic models
+func (ms *ModelSelector) getAnthropicFallbackModels(providerID string) []ModelInfo {
+	return []ModelInfo{
+		{
+			Name: "Claude 3.5 Sonnet", ID: "claude-3-5-sonnet-20241022", Provider: providerID,
+			Description: "Most intelligent model for complex reasoning", ContextLength: 200000,
+			InputPrice: 3.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "reasoning"},
+			Favorite: ms.favorites.IsModelFavorite("claude-3-5-sonnet-20241022"),
+		},
+		{
+			Name: "Claude 3.5 Haiku", ID: "claude-3-5-haiku-20241022", Provider: providerID,
+			Description: "Fastest model for simple tasks", ContextLength: 200000,
+			InputPrice: 0.8, OutputPrice: 4.0, Capabilities: []string{"text", "code", "speed"},
+			Favorite: ms.favorites.IsModelFavorite("claude-3-5-haiku-20241022"),
+		},
+		{
+			Name: "Claude 3 Opus", ID: "claude-3-opus-20240229", Provider: providerID,
+			Description: "Most powerful model for complex tasks", ContextLength: 200000,
+			InputPrice: 15.0, OutputPrice: 75.0, Capabilities: []string{"text", "code", "vision", "reasoning"},
+			Favorite: ms.favorites.IsModelFavorite("claude-3-opus-20240229"),
+		},
+	}
+}
+
+// convertAnthropicModelToModelInfo converts an Anthropic model to ModelInfo
+func (ms *ModelSelector) convertAnthropicModelToModelInfo(model providers.AnthropicModelInfo, providerID string) ModelInfo {
+	return ModelInfo{
+		Name:          model.DisplayName,
+		ID:            model.ID,
+		Provider:      providerID,
+		Description:   fmt.Sprintf("Anthropic %s model", model.Type),
+		ContextLength: 200000, // All Claude models support 200k context
+		InputPrice:    model.InputPrice,
+		OutputPrice:   model.OutputPrice,
+		Capabilities:  []string{"text", "code", "vision", "reasoning"},
+		Favorite:      ms.favorites.IsModelFavorite(model.ID),
+	}
+}
+
+// loadGeminiModels loads Gemini models from cache (populated by background fetcher)
+func (ms *ModelSelector) loadGeminiModels(providerID string) []ModelInfo {
+	// Try to get Gemini API key
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		// Return fallback models if no API key
+		return ms.getGeminiFallbackModels(providerID)
+	}
+
+	// Get models from cache (no timeout needed since it's just reading from cache)
+	ctx := context.Background()
+	geminiModels, err := providers.GetGeminiModels(ctx, apiKey)
+	if err != nil {
+		// Return fallback models on error
+		return ms.getGeminiFallbackModels(providerID)
+	}
+
+	// Convert Gemini models to ModelInfo
+	var models []ModelInfo
+	for _, model := range geminiModels {
+		modelInfo := ms.convertGeminiModelToModelInfo(model, providerID)
+		models = append(models, modelInfo)
+	}
+
+	// If no models found, return fallback
+	if len(models) == 0 {
+		return ms.getGeminiFallbackModels(providerID)
+	}
+
+	return models
+}
+
+// getGeminiFallbackModels returns fallback Gemini models
+func (ms *ModelSelector) getGeminiFallbackModels(providerID string) []ModelInfo {
+	return []ModelInfo{
+		{
+			Name: "Gemini 2.0 Flash (Experimental)", ID: "gemini-2.0-flash-exp", Provider: providerID,
+			Description: "Latest experimental Gemini model", ContextLength: 1000000,
+			InputPrice: 0.075, OutputPrice: 0.3, Capabilities: []string{"text", "code", "vision", "reasoning"},
+			Favorite: ms.favorites.IsModelFavorite("gemini-2.0-flash-exp"),
+		},
+		{
+			Name: "Gemini 1.5 Pro", ID: "gemini-1.5-pro", Provider: providerID,
+			Description: "Most capable Gemini model", ContextLength: 2000000,
+			InputPrice: 1.25, OutputPrice: 5.0, Capabilities: []string{"text", "code", "vision", "reasoning"},
+			Favorite: ms.favorites.IsModelFavorite("gemini-1.5-pro"),
+		},
+		{
+			Name: "Gemini 1.5 Flash", ID: "gemini-1.5-flash", Provider: providerID,
+			Description: "Fast and efficient Gemini model", ContextLength: 1000000,
+			InputPrice: 0.075, OutputPrice: 0.3, Capabilities: []string{"text", "code", "vision", "speed"},
+			Favorite: ms.favorites.IsModelFavorite("gemini-1.5-flash"),
+		},
+	}
+}
+
+// convertGeminiModelToModelInfo converts a Gemini model to ModelInfo
+func (ms *ModelSelector) convertGeminiModelToModelInfo(model providers.GeminiModelInfo, providerID string) ModelInfo {
+	// Determine context length based on model
+	contextLength := 128000 // Default
+	if strings.Contains(model.ID, "1.5-pro") {
+		contextLength = 2000000 // 2M tokens
+	} else if strings.Contains(model.ID, "1.5-flash") || strings.Contains(model.ID, "2.0-flash") {
+		contextLength = 1000000 // 1M tokens
+	}
+
+	return ModelInfo{
+		Name:          model.DisplayName,
+		ID:            model.ID,
+		Provider:      providerID,
+		Description:   model.Description,
+		ContextLength: contextLength,
+		InputPrice:    model.InputPrice,
+		OutputPrice:   model.OutputPrice,
+		Capabilities:  []string{"text", "code", "vision", "reasoning"},
+		Favorite:      ms.favorites.IsModelFavorite(model.ID),
+	}
 }
