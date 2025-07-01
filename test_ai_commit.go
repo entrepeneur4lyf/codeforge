@@ -25,22 +25,22 @@ func main() {
 
 	// Check if this is a git repository
 	if !repo.IsGitRepository() {
-		fmt.Println("❌ This directory is not a git repository")
-		fmt.Println("💡 Initialize a git repository first with: git init")
+		fmt.Println("This directory is not a git repository")
+		fmt.Println("Initialize a git repository first with: git init")
 		return
 	}
 
 	// Check if git is installed
 	if !git.IsGitInstalled() {
-		fmt.Println("❌ Git is not installed on this system")
+		fmt.Println("Git is not installed on this system")
 		return
 	}
 
-	fmt.Printf("📁 Working directory: %s\n", workingDir)
+	fmt.Printf("Working directory: %s\n", workingDir)
 	fmt.Println()
 
 	// Test 1: Check git status
-	fmt.Println("🔍 Checking git status...")
+	fmt.Println("Checking git status...")
 	status, err := repo.GetStatus(context.Background())
 	if err != nil {
 		log.Printf("Failed to get git status: %v", err)
@@ -75,14 +75,14 @@ func main() {
 		
 		if len(stagedDiffs) == 0 {
 			fmt.Println("ℹ️  No staged changes detected either")
-			fmt.Println("💡 Make some changes to files and try again")
+			fmt.Println("Make some changes to files and try again")
 			return
 		}
 		
-		fmt.Printf("✅ Found %d staged changes\n", len(stagedDiffs))
+		fmt.Printf("Found %d staged changes\n", len(stagedDiffs))
 		diffs = stagedDiffs
 	} else {
-		fmt.Printf("✅ Found %d unstaged changes\n", len(diffs))
+		fmt.Printf("Found %d unstaged changes\n", len(diffs))
 	}
 
 	// Show diff summary
@@ -96,50 +96,50 @@ func main() {
 	fmt.Println()
 
 	// Test 3: Generate AI commit message
-	fmt.Println("🤖 Generating AI commit message...")
+	fmt.Println("Generating AI commit message...")
 	
 	// Check if we have API keys for LLM providers
 	hasAPIKey := false
 	providers := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY", "DEEPSEEK_API_KEY"}
 	for _, provider := range providers {
 		if os.Getenv(provider) != "" {
-			fmt.Printf("✅ Found %s\n", provider)
+			fmt.Printf("Found %s\n", provider)
 			hasAPIKey = true
 			break
 		}
 	}
 
 	if !hasAPIKey {
-		fmt.Println("⚠️  No API keys found for LLM providers")
-		fmt.Println("💡 Set one of these environment variables:")
+		fmt.Println(" No API keys found for LLM providers")
+		fmt.Println("Set one of these environment variables:")
 		for _, provider := range providers {
 			fmt.Printf("   export %s=your_api_key\n", provider)
 		}
 		fmt.Println()
-		fmt.Println("🔄 Continuing with test (will fail at LLM call)...")
+		fmt.Println("Continuing with test (will fail at LLM call)...")
 	}
 
 	generator, err := git.NewCommitMessageGenerator()
 	if err != nil {
-		log.Printf("❌ Failed to create commit message generator: %v", err)
+		log.Printf("Failed to create commit message generator: %v", err)
 		return
 	}
 
 	commitMessage, err := generator.GenerateCommitMessage(context.Background(), repo, false)
 	if err != nil {
-		log.Printf("❌ Failed to generate commit message: %v", err)
+		log.Printf("Failed to generate commit message: %v", err)
 		fmt.Println()
-		fmt.Println("💡 This is expected if no API keys are configured")
+		fmt.Println("This is expected if no API keys are configured")
 		return
 	}
 
-	fmt.Printf("✅ Generated commit message:\n")
+	fmt.Printf("Generated commit message:\n")
 	fmt.Printf("   %s\n", commitMessage)
 	fmt.Println()
 
-	fmt.Println("🎉 AI commit message generation test completed successfully!")
+	fmt.Println("AI commit message generation test completed successfully!")
 	fmt.Println()
-	fmt.Println("💡 To test the full commit functionality:")
+	fmt.Println("To test the full commit functionality:")
 	fmt.Println("   1. Make sure you have changes to commit")
 	fmt.Println("   2. Set an API key for an LLM provider")
 	fmt.Println("   3. Use: go run . chat")

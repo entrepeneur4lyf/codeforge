@@ -734,10 +734,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
         <!-- File Browser -->
         <div class="file-browser">
-            <div class="pane-header">📁 FILES</div>
+            <div class="pane-header">FILES</div>
             <div class="file-tree" id="fileTree">
                 <div class="file-item" onclick="openFile('README.md')">
-                    <span class="file-icon">📄</span>
+                    <span class="file-icon"></span>
                     <span>README.md</span>
                 </div>
                 <div class="file-item" onclick="openFile('main.go')">
@@ -777,7 +777,7 @@ func main() {
 
         <!-- AI Chat -->
         <div class="ai-chat">
-            <div class="pane-header">🤖 AI ASSISTANT</div>
+            <div class="pane-header">AI ASSISTANT</div>
             <div class="chat-messages" id="chatMessages">
                 <div class="message system">
                     CodeForge AI Assistant ready! Ask me about your code, request explanations, or get help with debugging.
@@ -817,7 +817,7 @@ Use Ctrl+backtick to focus terminal, Ctrl+1 for files, Ctrl+2 for editor, Ctrl+3
                 <input type="text" class="wt-input command-input" id="commandInput" placeholder="Type a command..." />
                 <div class="wt-list command-list" id="commandList">
                     <div class="wt-list-item command-item" onclick="executeCommand('file.new')">
-                        <div class="command-icon">📄</div>
+                        <div class="command-icon"></div>
                         <div class="command-details">
                             <div class="command-name">New File</div>
                             <div class="wt-text-muted command-description">Create a new file</div>
@@ -841,7 +841,7 @@ Use Ctrl+backtick to focus terminal, Ctrl+1 for files, Ctrl+2 for editor, Ctrl+3
                         <div class="wt-badge command-shortcut">Ctrl+B</div>
                     </div>
                     <div class="wt-list-item command-item" onclick="executeCommand('ai.chat')">
-                        <div class="command-icon">🤖</div>
+                        <div class="command-icon"></div>
                         <div class="command-details">
                             <div class="command-name">Focus AI Chat</div>
                             <div class="wt-text-muted command-description">Focus the AI chat input</div>
@@ -1743,7 +1743,7 @@ func (s *Server) listFiles(dir string) ([]map[string]interface{}, error) {
 		fileType := "file"
 
 		if entry.IsDir() {
-			icon = "📁"
+			icon = ""
 			fileType = "directory"
 		} else {
 			switch {
@@ -1756,11 +1756,11 @@ func (s *Server) listFiles(dir string) ([]map[string]interface{}, error) {
 			case strings.HasSuffix(entry.Name(), ".js"), strings.HasSuffix(entry.Name(), ".ts"):
 				icon = "📜"
 			case strings.HasSuffix(entry.Name(), ".md"):
-				icon = "📄"
+				icon = ""
 			case strings.HasSuffix(entry.Name(), ".yaml"), strings.HasSuffix(entry.Name(), ".yml"):
 				icon = "⚙️"
 			default:
-				icon = "📄"
+				icon = ""
 			}
 		}
 

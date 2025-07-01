@@ -145,7 +145,7 @@ func (ca *CodebaseAwareness) Initialize() error {
 	}
 
 	stats := ca.graph.GetStats()
-	log.Printf("✅ Scanned %d files, %d functions, %d types",
+	log.Printf("Scanned %d files, %d functions, %d types",
 		stats.NodesByType[NodeTypeFile],
 		stats.NodesByType[NodeTypeFunction],
 		stats.NodesByType[NodeTypeStruct]+stats.NodesByType[NodeTypeInterface])

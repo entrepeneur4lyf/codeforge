@@ -87,7 +87,7 @@ func (fw *FileWatcher) Start() error {
 	// Start the debounce processing goroutine
 	go fw.processDebounced()
 
-	log.Printf("📁 File watcher started for: %s", fw.rootPath)
+	log.Printf("File watcher started for: %s", fw.rootPath)
 	return nil
 }
 
@@ -96,7 +96,7 @@ func (fw *FileWatcher) Stop() {
 	fw.cancel()
 	fw.watcher.Close()
 	<-fw.done
-	log.Println("📁 File watcher stopped")
+	log.Println("File watcher stopped")
 }
 
 // SetIgnoreRules sets custom ignore rules
@@ -129,7 +129,7 @@ func (fw *FileWatcher) processEvents() {
 			if !ok {
 				return
 			}
-			log.Printf("❌ File watcher error: %v", err)
+			log.Printf("File watcher error: %v", err)
 		}
 	}
 }
@@ -193,7 +193,7 @@ func (fw *FileWatcher) processPendingFiles() {
 
 // updateGraphForFiles updates the graph for changed files
 func (fw *FileWatcher) updateGraphForFiles(files []string) {
-	log.Printf("🔄 Updating graph for %d files", len(files))
+	log.Printf("Updating graph for %d files", len(files))
 
 	for _, relPath := range files {
 		fullPath := filepath.Join(fw.rootPath, relPath)
@@ -212,7 +212,7 @@ func (fw *FileWatcher) updateGraphForFiles(files []string) {
 		}
 	}
 
-	log.Printf("✅ Graph updated successfully")
+	log.Printf("Graph updated successfully")
 }
 
 // updateDirectory updates a directory in the graph
@@ -233,7 +233,7 @@ func (fw *FileWatcher) updateDirectory(relPath string, info os.FileInfo) {
 	}
 
 	if err := fw.graph.AddNode(node); err != nil {
-		log.Printf("❌ Failed to add directory node: %v", err)
+		log.Printf("Failed to add directory node: %v", err)
 		return
 	}
 
@@ -267,7 +267,7 @@ func (fw *FileWatcher) updateFile(relPath string, info os.FileInfo, fullPath str
 	}
 
 	if err := fw.graph.AddNode(node); err != nil {
-		log.Printf("❌ Failed to add file node: %v", err)
+		log.Printf("Failed to add file node: %v", err)
 		return
 	}
 
@@ -359,7 +359,7 @@ func (fw *FileWatcher) addDirectoryRecursive(path string) error {
 
 		// Add directory to watcher
 		if err := fw.watcher.Add(walkPath); err != nil {
-			log.Printf("❌ Failed to watch directory %s: %v", walkPath, err)
+			log.Printf("Failed to watch directory %s: %v", walkPath, err)
 		}
 
 		return nil

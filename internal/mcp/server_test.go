@@ -44,7 +44,7 @@ func TestCodeForgeServer_Creation(t *testing.T) {
 		t.Fatal("MCP server instance is nil")
 	}
 
-	t.Log("✅ MCP server created successfully")
+	t.Log("MCP server created successfully")
 }
 
 func TestCodeForgeServer_Tools(t *testing.T) {
@@ -112,7 +112,7 @@ func main() {
 			t.Fatal("read_file returned empty content")
 		}
 
-		t.Log("✅ read_file tool works correctly")
+		t.Log("read_file tool works correctly")
 	})
 
 	// Test write_file tool
@@ -142,7 +142,7 @@ func main() {
 			t.Fatal("write_file did not create the file")
 		}
 
-		t.Log("✅ write_file tool works correctly")
+		t.Log("write_file tool works correctly")
 	})
 
 	// Test get_project_structure tool
@@ -166,7 +166,7 @@ func main() {
 			t.Fatal("get_project_structure returned nil result")
 		}
 
-		t.Log("✅ get_project_structure tool works correctly")
+		t.Log("get_project_structure tool works correctly")
 	})
 
 	// Test semantic_search tool
@@ -191,7 +191,7 @@ func main() {
 			t.Fatal("semantic_search returned nil result")
 		}
 
-		t.Log("✅ semantic_search tool works correctly")
+		t.Log("semantic_search tool works correctly")
 	})
 }
 
@@ -238,7 +238,7 @@ func TestCodeForgeServer_Resources(t *testing.T) {
 			t.Fatal("project metadata returned empty result")
 		}
 
-		t.Log("✅ project metadata resource works correctly")
+		t.Log("project metadata resource works correctly")
 	})
 
 	// Test git status resource
@@ -258,7 +258,7 @@ func TestCodeForgeServer_Resources(t *testing.T) {
 			t.Fatal("git status returned empty result")
 		}
 
-		t.Log("✅ git status resource works correctly")
+		t.Log("git status resource works correctly")
 	})
 }
 
@@ -295,7 +295,7 @@ func TestCodeForgeServer_PathValidation(t *testing.T) {
 		if validPath == "" {
 			t.Fatal("Valid path returned empty string")
 		}
-		t.Log("✅ Valid path validation works")
+		t.Log("Valid path validation works")
 	})
 
 	// Test path traversal attack
@@ -304,7 +304,7 @@ func TestCodeForgeServer_PathValidation(t *testing.T) {
 		if err == nil {
 			t.Fatal("Path traversal attack was not prevented")
 		}
-		t.Log("✅ Path traversal prevention works")
+		t.Log("Path traversal prevention works")
 	})
 
 	// Test absolute path outside workspace
@@ -313,6 +313,6 @@ func TestCodeForgeServer_PathValidation(t *testing.T) {
 		if err == nil {
 			t.Fatal("Absolute path outside workspace was not prevented")
 		}
-		t.Log("✅ Absolute path prevention works")
+		t.Log("Absolute path prevention works")
 	})
 }

@@ -78,11 +78,11 @@ func (cr *CommandRouter) handleGitCommitCommand(ctx context.Context, userInput s
 
 	// Check if git is available and this is a git repository
 	if !git.IsGitInstalled() {
-		return "❌ Git is not installed on this system", true
+		return "Git is not installed on this system", true
 	}
 
 	if !repo.IsGitRepository() {
-		return "❌ This directory is not a git repository", true
+		return "This directory is not a git repository", true
 	}
 
 	// Determine if user wants to commit staged changes only
@@ -95,21 +95,21 @@ func (cr *CommandRouter) handleGitCommitCommand(ctx context.Context, userInput s
 		// Generate commit message without committing
 		generator, err := git.NewCommitMessageGenerator()
 		if err != nil {
-			return fmt.Sprintf("❌ Failed to create commit message generator: %v", err), true
+			return fmt.Sprintf("Failed to create commit message generator: %v", err), true
 		}
 
 		commitMessage, err := generator.GenerateCommitMessage(ctx, repo, staged)
 		if err != nil {
-			return fmt.Sprintf("❌ Failed to generate commit message: %v", err), true
+			return fmt.Sprintf("Failed to generate commit message: %v", err), true
 		}
 
-		return fmt.Sprintf("🤖 Generated commit message:\n\n%s\n\n💡 To commit with this message, say 'commit' or 'git commit'", commitMessage), true
+		return fmt.Sprintf("Generated commit message:\n\n%s\n\nTo commit with this message, say 'commit' or 'git commit'", commitMessage), true
 	}
 
 	// Commit with AI-generated message
 	commitMessage, err := repo.CommitWithAIMessage(ctx, staged)
 	if err != nil {
-		return fmt.Sprintf("❌ Failed to commit with AI message: %v", err), true
+		return fmt.Sprintf("Failed to commit with AI message: %v", err), true
 	}
 
 	stagedText := ""
@@ -117,7 +117,7 @@ func (cr *CommandRouter) handleGitCommitCommand(ctx context.Context, userInput s
 		stagedText = " (staged changes only)"
 	}
 
-	return fmt.Sprintf("✅ Successfully committed%s with AI-generated message:\n\n%s", stagedText, commitMessage), true
+	return fmt.Sprintf("Successfully committed%s with AI-generated message:\n\n%s", stagedText, commitMessage), true
 }
 
 // Git conflict command detection and handling
@@ -145,11 +145,11 @@ func (cr *CommandRouter) handleGitConflictCommand(ctx context.Context, userInput
 
 	// Check if git is available and this is a git repository
 	if !git.IsGitInstalled() {
-		return "❌ Git is not installed", true
+		return "Git is not installed", true
 	}
 
 	if !repo.IsGitRepository() {
-		return "❌ Not a git repository", true
+		return "Not a git repository", true
 	}
 
 	// Check if user just wants to detect conflicts
@@ -158,46 +158,46 @@ func (cr *CommandRouter) handleGitConflictCommand(ctx context.Context, userInput
 	// Detect conflicts
 	conflicts, err := repo.DetectConflicts(ctx)
 	if err != nil {
-		return fmt.Sprintf("❌ Failed to detect conflicts: %v", err), true
+		return fmt.Sprintf("Failed to detect conflicts: %v", err), true
 	}
 
 	if len(conflicts) == 0 {
-		return "✅ No merge conflicts detected in the repository", true
+		return "No merge conflicts detected in the repository", true
 	}
 
 	if detectOnly {
 		var response strings.Builder
-		response.WriteString(fmt.Sprintf("🔍 Found %d file(s) with merge conflicts:\n\n", len(conflicts)))
+		response.WriteString(fmt.Sprintf("Found %d file(s) with merge conflicts:\n\n", len(conflicts)))
 
 		for i, conflict := range conflicts {
 			response.WriteString(fmt.Sprintf("%d. %s (%s) - %d conflict section(s)\n",
 				i+1, conflict.FilePath, conflict.ConflictType, len(conflict.Conflicts)))
 		}
 
-		response.WriteString("\n💡 To get AI-powered resolution suggestions, say 'resolve conflicts' or 'conflict help'")
+		response.WriteString("\nTo get AI-powered resolution suggestions, say 'resolve conflicts' or 'conflict help'")
 		return response.String(), true
 	}
 
 	// Create conflict resolver and get AI suggestions
 	resolver, err := git.NewConflictResolver()
 	if err != nil {
-		return fmt.Sprintf("❌ Failed to create conflict resolver: %v", err), true
+		return fmt.Sprintf("Failed to create conflict resolver: %v", err), true
 	}
 
 	resolutions, err := resolver.ResolveConflicts(ctx, conflicts)
 	if err != nil {
-		return fmt.Sprintf("❌ Failed to get conflict resolutions: %v", err), true
+		return fmt.Sprintf("Failed to get conflict resolutions: %v", err), true
 	}
 
 	// Check if user wants to auto-apply
 	autoApply := strings.Contains(input, "apply") || strings.Contains(input, "fix") || strings.Contains(input, "auto")
 
 	var response strings.Builder
-	response.WriteString(fmt.Sprintf("🤖 AI Conflict Resolution Analysis for %d file(s):\n\n", len(resolutions)))
+	response.WriteString(fmt.Sprintf("AI Conflict Resolution Analysis for %d file(s):\n\n", len(resolutions)))
 
 	appliedCount := 0
 	for _, resolution := range resolutions {
-		response.WriteString(fmt.Sprintf("📁 **%s** (Confidence: %s)\n", resolution.FilePath, resolution.Confidence))
+		response.WriteString(fmt.Sprintf("**%s** (Confidence: %s)\n", resolution.FilePath, resolution.Confidence))
 		response.WriteString(fmt.Sprintf("   %s\n\n", resolution.Explanation))
 
 		for j, sectionRes := range resolution.Resolutions {
@@ -207,22 +207,22 @@ func (cr *CommandRouter) handleGitConflictCommand(ctx context.Context, userInput
 
 		if autoApply {
 			if err := repo.ApplyResolution(ctx, resolution); err == nil {
-				response.WriteString("   ✅ Applied automatically\n")
+				response.WriteString("   Applied automatically\n")
 				appliedCount++
 			} else {
-				response.WriteString(fmt.Sprintf("   ❌ Failed to apply: %v\n", err))
+				response.WriteString(fmt.Sprintf("   Failed to apply: %v\n", err))
 			}
 		}
 		response.WriteString("\n")
 	}
 
 	if autoApply {
-		response.WriteString(fmt.Sprintf("🎯 Applied %d out of %d resolutions automatically\n", appliedCount, len(resolutions)))
+		response.WriteString(fmt.Sprintf("Applied %d out of %d resolutions automatically\n", appliedCount, len(resolutions)))
 		if appliedCount > 0 {
-			response.WriteString("💡 Review the changes and commit when ready")
+			response.WriteString("Review the changes and commit when ready")
 		}
 	} else {
-		response.WriteString("💡 To apply these resolutions automatically, say 'apply conflict resolutions' or 'fix conflicts'")
+		response.WriteString("To apply these resolutions automatically, say 'apply conflict resolutions' or 'fix conflicts'")
 	}
 
 	return response.String(), true
@@ -338,7 +338,7 @@ func (cr *CommandRouter) handleBuildCommand(ctx context.Context, userInput strin
 	}
 
 	// Build succeeded
-	result := fmt.Sprintf("✅ Build successful in %s\n\n", cr.workingDir)
+	result := fmt.Sprintf("Build successful in %s\n\n", cr.workingDir)
 	if len(output) > 0 {
 		result += "**Build Output:**\n```\n" + string(output) + "\n```"
 	}
@@ -392,32 +392,32 @@ func (cr *CommandRouter) handleSearchCommand(ctx context.Context, userInput stri
 	// Extract search query from user input
 	query := cr.extractSearchQuery(userInput)
 	if query == "" {
-		return "❌ Could not extract search query. Please specify what you want to search for.", true
+		return "Could not extract search query. Please specify what you want to search for.", true
 	}
 
 	// Get embedding for the search query using the package-level function
 	embedding, err := embeddings.GetEmbedding(ctx, query)
 	if err != nil {
-		return fmt.Sprintf("❌ Failed to generate embedding: %v", err), true
+		return fmt.Sprintf("Failed to generate embedding: %v", err), true
 	}
 
 	// Search vector database
 	vdb := vectordb.Get()
 	if vdb == nil {
-		return "❌ Vector database not available", true
+		return "Vector database not available", true
 	}
 
 	results, err := vdb.SearchSimilarChunks(ctx, embedding, 5, map[string]string{})
 	if err != nil {
-		return fmt.Sprintf("❌ Search failed: %v", err), true
+		return fmt.Sprintf("Search failed: %v", err), true
 	}
 
 	if len(results) == 0 {
-		return fmt.Sprintf("🔍 No results found for: %s", query), true
+		return fmt.Sprintf("No results found for: %s", query), true
 	}
 
 	// Format results
-	response := fmt.Sprintf("🔍 Search results for: **%s**\n\n", query)
+	response := fmt.Sprintf("Search results for: **%s**\n\n", query)
 	for i, result := range results {
 		response += fmt.Sprintf("**%d. %s** (Score: %.3f)\n", i+1, result.Chunk.FilePath, result.Score)
 		response += fmt.Sprintf("```%s\n%s\n```\n\n", result.Chunk.Language, result.Chunk.Content)
@@ -464,7 +464,7 @@ func (cr *CommandRouter) isLSPCommand(input string) bool {
 func (cr *CommandRouter) handleLSPCommand(ctx context.Context, userInput string) (string, bool) {
 	lspManager := lsp.GetManager()
 	if lspManager == nil {
-		return "❌ LSP manager not available", true
+		return "LSP manager not available", true
 	}
 
 	// For now, provide general LSP information
@@ -474,7 +474,7 @@ func (cr *CommandRouter) handleLSPCommand(ctx context.Context, userInput string)
 	response += "- **Find References**: Find all usages of a symbol\n"
 	response += "- **Hover Information**: Get type and documentation info\n"
 	response += "- **Code Completion**: Get autocomplete suggestions\n\n"
-	response += "💡 **Note**: LSP features work best when you specify a file and position.\n"
+	response += "**Note**: LSP features work best when you specify a file and position.\n"
 	response += "Example: \"Find definition of MyFunction in main.go at line 25\""
 
 	return response, true
@@ -499,10 +499,10 @@ func (cr *CommandRouter) handleFileCommand(ctx context.Context, userInput string
 	// List files in the working directory
 	files, err := cr.listProjectFiles(cr.workingDir)
 	if err != nil {
-		return fmt.Sprintf("❌ Failed to list files: %v", err), true
+		return fmt.Sprintf("Failed to list files: %v", err), true
 	}
 
-	response := fmt.Sprintf("📁 **Project files in %s:**\n\n", cr.workingDir)
+	response := fmt.Sprintf("**Project files in %s:**\n\n", cr.workingDir)
 	for _, file := range files {
 		response += fmt.Sprintf("- %s\n", file)
 	}

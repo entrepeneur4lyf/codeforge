@@ -72,7 +72,7 @@ func (m *Manager) Start() error {
 	}
 
 	m.started = true
-	log.Printf("🎯 Event manager started")
+	log.Printf("Event manager started")
 
 	// Publish system started event
 	go func() {
@@ -121,7 +121,7 @@ func (m *Manager) Shutdown() {
 	m.genericBroker.Shutdown()
 
 	m.started = false
-	log.Printf("🎯 Event manager shut down")
+	log.Printf("Event manager shut down")
 }
 
 // Chat event methods

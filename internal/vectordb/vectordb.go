@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"os"
@@ -206,7 +207,7 @@ func (vdb *VectorDB) initializeSchema() error {
 	// Detect and set embedding dimensions dynamically
 	if err := vdb.detectEmbeddingDimensions(); err != nil {
 		// Log warning but don't fail initialization
-		fmt.Printf("⚠️ Could not detect embedding dimensions: %v\n", err)
+		log.Printf("Could not detect embedding dimensions: %v", err)
 	}
 
 	// Try to create vector index using libsql-vector (256 dimensions for minilm-distilled)
@@ -218,16 +219,16 @@ func (vdb *VectorDB) initializeSchema() error {
 	if _, err := vdb.db.ExecContext(ctx, vectorIndexSQL); err != nil {
 		// Vector index creation failed - this is expected if libsql-vectors extension is not available
 		// The system gracefully falls back to JSON-based similarity search which is still very performant
-		fmt.Printf("⚠️  Vector index creation failed: %v\n", err)
-		fmt.Println("📝 Continuing with JSON-based similarity search (this is normal and expected)")
-		fmt.Println("💡 To enable native vector indexing, ensure sqlite-vec extension is available")
+		log.Printf(" Vector index creation failed: %v", err)
+		log.Printf("📝 Continuing with JSON-based similarity search (this is normal and expected)")
+		log.Printf("To enable native vector indexing, ensure sqlite-vec extension is available")
 
 		// Update stats to reflect fallback mode
 		vdb.mu.Lock()
 		vdb.stats.IndexType = "JSON-based Similarity Search (Fallback)"
 		vdb.mu.Unlock()
 	} else {
-		fmt.Println("✅ Vector index created successfully with native sqlite-vec support")
+		log.Printf("Vector index created successfully with native sqlite-vec support")
 
 		// Update stats to reflect native vector indexing
 		vdb.mu.Lock()
@@ -257,7 +258,7 @@ func (vdb *VectorDB) initializeSchema() error {
 		return fmt.Errorf("failed to create error_patterns table: %w", err)
 	}
 
-	fmt.Println("✅ Vector database schema initialized successfully")
+	log.Printf("Vector database schema initialized successfully")
 	return nil
 }
 
@@ -272,7 +273,7 @@ func (vdb *VectorDB) detectEmbeddingDimensions() error {
 		vdb.stats.Dimension = 1536 // OpenAI text-embedding-3-small
 		vdb.stats.IndexType = "OpenAI Embeddings (1536D)"
 		vdb.mu.Unlock()
-		fmt.Printf("🔧 Detected OpenAI embedding provider (1536 dimensions)\n")
+		log.Printf("🔧 Detected OpenAI embedding provider (1536 dimensions)")
 		return nil
 	}
 
@@ -282,7 +283,7 @@ func (vdb *VectorDB) detectEmbeddingDimensions() error {
 		vdb.stats.Dimension = 768 // Common Ollama dimension
 		vdb.stats.IndexType = "Ollama Embeddings (768D)"
 		vdb.mu.Unlock()
-		fmt.Printf("🔧 Detected Ollama embedding provider (768 dimensions)\n")
+		log.Printf("🔧 Detected Ollama embedding provider (768 dimensions)")
 		return nil
 	}
 
@@ -291,7 +292,7 @@ func (vdb *VectorDB) detectEmbeddingDimensions() error {
 	vdb.stats.Dimension = 384 // Hash-based fallback
 	vdb.stats.IndexType = "Fallback Embeddings (384D)"
 	vdb.mu.Unlock()
-	fmt.Printf("🔧 Using fallback embedding provider (384 dimensions)\n")
+	log.Printf("🔧 Using fallback embedding provider (384 dimensions)")
 
 	return nil
 }

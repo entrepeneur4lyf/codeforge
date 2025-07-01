@@ -54,7 +54,7 @@ func Initialize(cfg *config.Config) error {
 	// Use existing vectordb database for ML operations
 	vdb := vectordb.Get()
 	if vdb == nil {
-		log.Printf("⚠️  ML Service: Vector database not available, ML features disabled")
+		log.Printf(" ML Service: Vector database not available, ML features disabled")
 		service.enabled = false
 		globalService = service
 		return nil // Don't fail the entire application
@@ -62,7 +62,7 @@ func Initialize(cfg *config.Config) error {
 
 	// Initialize codebase manager
 	if err := service.initializeCodebase(vdb); err != nil {
-		log.Printf("⚠️  ML Service: Codebase initialization failed, ML features disabled: %v", err)
+		log.Printf(" ML Service: Codebase initialization failed, ML features disabled: %v", err)
 		service.enabled = false
 		globalService = service
 		return nil // Don't fail the entire application
@@ -279,7 +279,7 @@ func (s *Service) backgroundRescan() {
 		return
 	}
 
-	log.Println("🔄 ML Service: Background rescan started")
+	log.Println("ML Service: Background rescan started")
 
 	// Rescan the codebase
 	codeGraph := graph.NewCodeGraph(s.manager.GetRootPath())
@@ -305,7 +305,7 @@ func (s *Service) backgroundRescan() {
 	s.intelligence = newIntelligence
 	s.lastScan = time.Now()
 
-	log.Println("✅ ML Service: Background rescan completed")
+	log.Println("ML Service: Background rescan completed")
 }
 
 func (s *Service) formatSearchResult(result *SearchResult) string {

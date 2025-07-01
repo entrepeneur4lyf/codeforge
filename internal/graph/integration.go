@@ -458,7 +458,7 @@ func (cm *CodebaseManager) SetVectorStore(vectorStore interface{}) {
 	if cm.awareness != nil && vectorStore != nil {
 		// Type assertion would be needed here when integrating with actual vector store
 		// cm.hybridSearch = NewHybridSearchEngine(cm.awareness.graph, vectorStore.(*search.VectorStore))
-		log.Println("🔍 Hybrid search engine ready")
+		log.Println("Hybrid search engine ready")
 	}
 }
 
@@ -533,7 +533,7 @@ func (cm *CodebaseManager) graphOnlySearch(query string, maxResults int) string 
 func (cm *CodebaseManager) formatHybridSearchResults(response *HybridSearchResponse) string {
 	var output strings.Builder
 
-	output.WriteString("# 🔍 Hybrid Search Results\n\n")
+	output.WriteString("# Hybrid Search Results\n\n")
 	output.WriteString(fmt.Sprintf("**Query Time:** %v  \n", response.QueryTime))
 	output.WriteString(fmt.Sprintf("**Total Found:** %d results  \n", response.TotalFound))
 	output.WriteString(fmt.Sprintf("**Explanation:** %s  \n\n", response.Explanation))

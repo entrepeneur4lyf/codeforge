@@ -57,7 +57,7 @@ func main() {
 		log.Fatalf("Failed to create API server")
 	}
 
-	fmt.Printf("🚀 Starting CodeForge API Server\n")
+	fmt.Printf("Starting CodeForge API Server\n")
 	fmt.Printf("📡 Server: http://localhost:%d\n", *port)
 	fmt.Printf("🔗 Health: http://localhost:%d/api/v1/health\n", *port)
 	fmt.Printf("📊 Metrics: http://localhost:%d/api/v1/events/metrics\n", *port)
@@ -80,6 +80,6 @@ func initializeServices(cfg *config.Config) error {
 		return fmt.Errorf("failed to initialize embeddings: %w", err)
 	}
 
-	log.Println("✅ All services initialized successfully")
+	log.Println("All services initialized successfully")
 	return nil
 }

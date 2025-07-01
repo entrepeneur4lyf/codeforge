@@ -70,7 +70,7 @@ func Initialize(cfg *config.Config) error {
 		case "ollama":
 			if isOllamaAvailable() {
 				if err := checkProviderChange(ProviderOllama); err != nil {
-					log.Printf("⚠️ Provider change validation failed: %v", err)
+					log.Printf("Provider change validation failed: %v", err)
 				}
 				embeddingService.provider = ProviderOllama
 				log.Printf("Using Ollama embedding service (configured)")
@@ -81,7 +81,7 @@ func Initialize(cfg *config.Config) error {
 		case "openai":
 			if isOpenAIAvailable() {
 				if err := checkProviderChange(ProviderOpenAI); err != nil {
-					log.Printf("⚠️ Provider change validation failed: %v", err)
+					log.Printf("Provider change validation failed: %v", err)
 				}
 				embeddingService.provider = ProviderOpenAI
 				log.Printf("Using OpenAI embedding service (configured)")
@@ -94,7 +94,7 @@ func Initialize(cfg *config.Config) error {
 
 	// Check provider change for fallback
 	if err := checkProviderChange(ProviderFallback); err != nil {
-		log.Printf("⚠️ Provider change validation failed: %v", err)
+		log.Printf("Provider change validation failed: %v", err)
 	}
 
 	// Default to fallback (conservative approach)
@@ -103,9 +103,9 @@ func Initialize(cfg *config.Config) error {
 
 	// Show available options
 	if isOllamaAvailable() {
-		log.Printf("💡 Ollama detected - use '/embedding ollama' for better quality")
+		log.Printf("Ollama detected - use '/embedding ollama' for better quality")
 	} else if isOpenAIAvailable() {
-		log.Printf("💡 OpenAI API detected - use '/embedding openai' for better quality")
+		log.Printf("OpenAI API detected - use '/embedding openai' for better quality")
 	}
 
 	embeddingService.initialized = true
@@ -405,7 +405,7 @@ func ValidateProviderChange(newProviderName string) error {
 	embeddingService.provider = newProvider
 	embeddingService.mu.Unlock()
 
-	log.Printf("✅ Successfully changed embedding provider to: %s", getProviderName(newProvider))
+	log.Printf("Successfully changed embedding provider to: %s", getProviderName(newProvider))
 	return nil
 }
 

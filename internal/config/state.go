@@ -35,7 +35,7 @@ func NewState() *State {
 // GetModelDisplay returns a formatted model name for display in the status bar
 func (s *State) GetModelDisplay() string {
 	if s.Provider == "" || s.Model == "" {
-		return "🤖 No Model Selected"
+		return "No Model Selected"
 	}
 	
 	// Format like OpenCode: provider/model
@@ -43,27 +43,27 @@ func (s *State) GetModelDisplay() string {
 	case "anthropic":
 		switch s.Model {
 		case "claude-3-5-sonnet-20241022":
-			return "🤖 Claude 3.5 Sonnet"
+			return "Claude 3.5 Sonnet"
 		case "claude-3-haiku-20240307":
-			return "🤖 Claude 3 Haiku"
+			return "Claude 3 Haiku"
 		default:
-			return "🤖 Claude"
+			return "Claude"
 		}
 	case "openai":
 		switch s.Model {
 		case "gpt-4":
-			return "🤖 GPT-4"
+			return "GPT-4"
 		case "gpt-3.5-turbo":
-			return "🤖 GPT-3.5 Turbo"
+			return "GPT-3.5 Turbo"
 		default:
-			return "🤖 OpenAI"
+			return "OpenAI"
 		}
 	case "google":
-		return "🤖 Gemini"
+		return "Gemini"
 	case "groq":
-		return "🤖 Groq"
+		return "Groq"
 	default:
-		return fmt.Sprintf("🤖 %s", s.Provider)
+		return fmt.Sprintf("%s", s.Provider)
 	}
 }
 

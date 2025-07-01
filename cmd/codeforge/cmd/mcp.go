@@ -41,14 +41,14 @@ var mcpListCmd = &cobra.Command{
 		fmt.Println("   • codeforge://files/{path} - File content access")
 		fmt.Println("   • codeforge://git/status - Git repository status")
 
-		fmt.Println("\n💡 Prompts:")
+		fmt.Println("\nPrompts:")
 		fmt.Println("   • code_review - Code review assistance")
 		fmt.Println("   • debug_help - Debugging guidance")
 		fmt.Println("   • refactoring_guide - Refactoring recommendations")
 		fmt.Println("   • documentation_help - Documentation generation")
 		fmt.Println("   • testing_help - Test creation assistance")
 
-		fmt.Println("\n🚀 Usage:")
+		fmt.Println("\nUsage:")
 		fmt.Println("   Start MCP server: codeforge mcp server")
 		fmt.Println("   Or use standalone: ./mcp-server -workspace /path/to/project")
 

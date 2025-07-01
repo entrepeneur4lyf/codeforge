@@ -163,16 +163,16 @@ func (ms *ModelSelector) loadProviders() {
 // loadOpenRouterFilters loads the available provider filters for OpenRouter
 func (ms *ModelSelector) loadOpenRouterFilters() {
 	ms.openRouterFilters = []OpenRouterFilter{
-		{Name: "🌟 All Providers", ProviderKey: "", Description: "Show models from all providers"},
-		{Name: "🤖 Anthropic", ProviderKey: "anthropic", Description: "Claude models via OpenRouter"},
-		{Name: "🔥 OpenAI", ProviderKey: "openai", Description: "GPT models via OpenRouter"},
+		{Name: "All Providers", ProviderKey: "", Description: "Show models from all providers"},
+		{Name: "Anthropic", ProviderKey: "anthropic", Description: "Claude models via OpenRouter"},
+		{Name: "OpenAI", ProviderKey: "openai", Description: "GPT models via OpenRouter"},
 		{Name: "💎 Google", ProviderKey: "google", Description: "Gemini models via OpenRouter"},
 		{Name: "🦙 Meta/Llama", ProviderKey: "meta-llama", Description: "Llama models via OpenRouter"},
 		{Name: "🌊 Mistral", ProviderKey: "mistralai", Description: "Mistral models via OpenRouter"},
 		{Name: "🧠 DeepSeek", ProviderKey: "deepseek", Description: "DeepSeek models via OpenRouter"},
 		{Name: "⚡ xAI", ProviderKey: "x-ai", Description: "Grok models via OpenRouter"},
 		{Name: "🔮 Cohere", ProviderKey: "cohere", Description: "Command models via OpenRouter"},
-		{Name: "🚀 Others", ProviderKey: "others", Description: "Other providers via OpenRouter"},
+		{Name: "Others", ProviderKey: "others", Description: "Other providers via OpenRouter"},
 	}
 }
 
@@ -473,7 +473,7 @@ func (ms *ModelSelector) View() string {
 	var b strings.Builder
 
 	if ms.mode == SelectingProvider {
-		b.WriteString(titleStyle.Render("🤖 Select AI Provider"))
+		b.WriteString(titleStyle.Render("Select AI Provider"))
 		b.WriteString("\n\n")
 
 		for i, provider := range ms.providers {
@@ -523,7 +523,7 @@ func (ms *ModelSelector) View() string {
 		b.WriteString(helpStyle.Render("↑/↓: navigate • enter: select • backspace: back • q: quit"))
 
 	} else {
-		b.WriteString(titleStyle.Render("🎯 Select Model"))
+		b.WriteString(titleStyle.Render("Select Model"))
 		b.WriteString("\n\n")
 
 		if ms.loading {

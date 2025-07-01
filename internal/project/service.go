@@ -169,17 +169,64 @@ func (s *Service) SaveProjectSummary(overview *ProjectOverview) error {
 
 // CreatePRDFiles creates both project-overview.md and AGENT.md from overview
 func (s *Service) CreatePRDFiles(overview *ProjectOverview) error {
-	// Save comprehensive project overview
-	if err := s.SaveProjectOverview(overview); err != nil {
-		return fmt.Errorf("failed to save project overview: %w", err)
+	// Always use direct file operations for automatic analysis to avoid permission hangs
+	return s.createPRDFilesDirect(overview)
+}
+
+// createPRDFilesDirect creates PRD files using direct file operations
+func (s *Service) createPRDFilesDirect(overview *ProjectOverview) error {
+	// Generate content
+	overviewMarkdown := s.GenerateProjectOverviewMarkdown(overview)
+	summaryMarkdown := s.GenerateProjectSummary(overview)
+
+	// Write files directly
+	overviewPath := filepath.Join(s.workingDir, "project-overview.md")
+	if err := os.WriteFile(overviewPath, []byte(overviewMarkdown), 0644); err != nil {
+		return fmt.Errorf("failed to save project-overview.md: %w", err)
 	}
 
-	// Save concise project summary for context (AGENT.md only)
-	if err := s.SaveProjectSummary(overview); err != nil {
-		return fmt.Errorf("failed to save project summary: %w", err)
+	summaryPath := filepath.Join(s.workingDir, "AGENT.md")
+	if err := os.WriteFile(summaryPath, []byte(summaryMarkdown), 0644); err != nil {
+		return fmt.Errorf("failed to save AGENT.md: %w", err)
 	}
 
 	return nil
+}
+
+// UpdateProjectSummary intelligently updates existing AGENT.md with current project analysis
+func (s *Service) UpdateProjectSummary(overview *ProjectOverview, existingContent string) string {
+	// Generate new summary from current analysis
+	newSummary := s.GenerateProjectSummary(overview)
+
+	// For now, do intelligent merging - preserve custom sections but update core info
+	// This is a simplified approach - in the future we could do more sophisticated merging
+
+	// Check if existing content has custom sections we should preserve
+	lines := strings.Split(existingContent, "\n")
+	var customSections []string
+	inCustomSection := false
+
+	for _, line := range lines {
+		// Look for custom sections (anything not in standard template)
+		if strings.HasPrefix(line, "## Custom") || strings.HasPrefix(line, "## Notes") ||
+			strings.HasPrefix(line, "## Additional") || strings.Contains(line, "CUSTOM:") {
+			inCustomSection = true
+		}
+		if inCustomSection {
+			customSections = append(customSections, line)
+			if strings.TrimSpace(line) == "" && len(customSections) > 1 {
+				inCustomSection = false
+			}
+		}
+	}
+
+	// Append custom sections to new summary if they exist
+	if len(customSections) > 0 {
+		newSummary += "\n\n## Preserved Custom Sections\n"
+		newSummary += strings.Join(customSections, "\n")
+	}
+
+	return newSummary
 }
 
 // HasExistingProject checks if the current directory has project indicators

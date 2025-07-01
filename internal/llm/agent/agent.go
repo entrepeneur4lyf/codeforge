@@ -142,7 +142,7 @@ func (s *AgentService) initializeAgents() error {
 			Provider: model.Provider,
 		}
 
-		log.Printf("✅ Initialized agent %s with model %s", agentName, model.Name)
+		log.Printf("Initialized agent %s with model %s", agentName, model.Name)
 	}
 
 	return nil

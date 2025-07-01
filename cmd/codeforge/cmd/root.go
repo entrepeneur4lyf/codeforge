@@ -73,6 +73,24 @@ func cleanupLogging() {
 	}
 }
 
+// autoGenerateProjectOverview automatically analyzes existing projects
+func autoGenerateProjectOverview() {
+	if codeforgeApp == nil {
+		return
+	}
+
+	agentMdPath := filepath.Join(workingDir, "AGENT.md")
+	prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
+
+	if _, err := os.Stat(agentMdPath); os.IsNotExist(err) {
+		// AGENT.md doesn't exist - analyze project and create overview
+		prdCommand.Execute(context.Background(), []string{"analyze"})
+	} else {
+		// AGENT.md exists - read it, analyze current project, and update
+		prdCommand.Execute(context.Background(), []string{"update"})
+	}
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "codeforge [prompt]",
 	Short: "AI-powered coding assistant",
@@ -133,7 +151,7 @@ Features:
 		// Initialize ML service silently for model context (graceful degradation if it fails)
 		ml.Initialize(codeforgeApp.Config) // Ignore errors - ML is for model context only
 
-		// Auto-generate project overview based on project state
+		// Auto-analyze existing projects (new projects handled by model tool)
 		autoGenerateProjectOverview()
 
 		return nil
@@ -171,90 +189,6 @@ func init() {
 	rootCmd.Flags().StringVarP(&provider, "provider", "p", "", "Specify the provider (anthropic, openai, openrouter, etc.)")
 	rootCmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, markdown)")
 
-	// Add PRD command
-	addPRDCommand()
-}
-
-// addPRDCommand adds the PRD command to the root command
-func addPRDCommand() {
-	prdCmd := &cobra.Command{
-		Use:   "prd",
-		Short: "Create and manage Project Requirements Documents (PRD)",
-		Long: `PRD commands help create structured project documentation that provides context for all AI interactions in CodeForge.
-
-Commands:
-  create    Create a new PRD through interactive questions
-  analyze   Analyze existing project and generate PRD automatically
-  check     Check for existing PRD and offer to create one`,
-		Run: func(cmd *cobra.Command, args []string) {
-			if len(args) == 0 {
-				cmd.Help()
-				return
-			}
-
-			// Get the file manager from the global app
-			if codeforgeApp == nil {
-				fmt.Println("❌ CodeForge app not initialized")
-				return
-			}
-
-			// Create PRD command with app's file manager
-			prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
-
-			// Execute the PRD command
-			if err := prdCommand.Execute(cmd.Context(), args); err != nil {
-				fmt.Printf("❌ PRD command failed: %v\n", err)
-			}
-		},
-	}
-
-	// Add subcommands
-	prdCmd.AddCommand(&cobra.Command{
-		Use:   "create",
-		Short: "Create a new PRD through interactive questions",
-		Run: func(cmd *cobra.Command, args []string) {
-			if codeforgeApp == nil {
-				fmt.Println("❌ CodeForge app not initialized")
-				return
-			}
-			prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
-			if err := prdCommand.Execute(cmd.Context(), []string{"create"}); err != nil {
-				fmt.Printf("❌ PRD creation failed: %v\n", err)
-			}
-		},
-	})
-
-	prdCmd.AddCommand(&cobra.Command{
-		Use:   "analyze",
-		Short: "Analyze existing project and generate PRD automatically",
-		Run: func(cmd *cobra.Command, args []string) {
-			if codeforgeApp == nil {
-				fmt.Println("❌ CodeForge app not initialized")
-				return
-			}
-			prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
-			if err := prdCommand.Execute(cmd.Context(), []string{"analyze"}); err != nil {
-				fmt.Printf("❌ PRD analysis failed: %v\n", err)
-			}
-		},
-	})
-
-	prdCmd.AddCommand(&cobra.Command{
-		Use:   "check",
-		Short: "Check for existing PRD and offer to create one",
-		Run: func(cmd *cobra.Command, args []string) {
-			if codeforgeApp == nil {
-				fmt.Println("❌ CodeForge app not initialized")
-				return
-			}
-			prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
-			if err := prdCommand.Execute(cmd.Context(), []string{"check"}); err != nil {
-				fmt.Printf("❌ PRD check failed: %v\n", err)
-			}
-		},
-	})
-
-	rootCmd.AddCommand(prdCmd)
 }
 
 func Execute() {
@@ -282,7 +216,7 @@ func handleDirectPrompt(prompt string) {
 			if quiet {
 				fmt.Printf("Error: %v\n", err)
 			} else {
-				fmt.Printf("❌ Error processing message: %v\n", err)
+				fmt.Printf("Error processing message: %v\n", err)
 			}
 			return
 		}
@@ -290,7 +224,7 @@ func handleDirectPrompt(prompt string) {
 		if quiet {
 			fmt.Println(response)
 		} else {
-			fmt.Printf("🤖 %s\n", response)
+			fmt.Printf("%s\n", response)
 		}
 		return
 	}
@@ -308,7 +242,7 @@ func handleDirectPrompt(prompt string) {
 		if quiet {
 			fmt.Println("Error: No API key found. Set one of the supported provider API keys.")
 		} else {
-			fmt.Println("❌ Error: No API key found")
+			fmt.Println("Error: No API key found")
 			fmt.Println("Please set one of these environment variables:")
 			fmt.Println("")
 			fmt.Println("🌐 Multi-Provider Platforms:")
@@ -330,7 +264,7 @@ func handleDirectPrompt(prompt string) {
 			fmt.Println("  - CEREBRAS_API_KEY (Cerebras)")
 			fmt.Println("  - SAMBANOVA_API_KEY (SambaNova)")
 			fmt.Println("")
-			fmt.Println("💡 Tip: OPENROUTER_API_KEY gives you access to the most models!")
+			fmt.Println("Tip: OPENROUTER_API_KEY gives you access to the most models!")
 		}
 		os.Exit(1)
 	}
@@ -341,7 +275,7 @@ func handleDirectPrompt(prompt string) {
 		if quiet {
 			fmt.Printf("Error: %v\n", err)
 		} else {
-			fmt.Printf("❌ Error creating chat session: %v\n", err)
+			fmt.Printf("Error creating chat session: %v\n", err)
 		}
 		os.Exit(1)
 	}
@@ -352,7 +286,7 @@ func handleDirectPrompt(prompt string) {
 		if quiet {
 			fmt.Printf("Error: %v\n", err)
 		} else {
-			fmt.Printf("❌ Error: %v\n", err)
+			fmt.Printf("Error: %v\n", err)
 		}
 		os.Exit(1)
 	}
@@ -414,7 +348,7 @@ func startInteractiveMode() {
 	// Get API key for the model
 	apiKey := chat.GetAPIKeyForModel(selectedModel)
 	if apiKey == "" {
-		fmt.Println("❌ Error: No API key found")
+		fmt.Println("Error: No API key found")
 		fmt.Println("Please set one of these environment variables:")
 		fmt.Println("")
 		fmt.Println("🌐 Multi-Provider Platforms:")
@@ -431,20 +365,20 @@ func startInteractiveMode() {
 		fmt.Println("  - COHERE_API_KEY, MISTRAL_API_KEY, PERPLEXITY_API_KEY")
 		fmt.Println("  - CEREBRAS_API_KEY, SAMBANOVA_API_KEY")
 		fmt.Println("")
-		fmt.Println("💡 Tip: OPENROUTER_API_KEY gives you access to the most models!")
+		fmt.Println("Tip: OPENROUTER_API_KEY gives you access to the most models!")
 		os.Exit(1)
 	}
 
 	// Create chat session
 	session, err := chat.NewChatSession(selectedModel, apiKey, provider, quiet, format)
 	if err != nil {
-		fmt.Printf("❌ Error creating chat session: %v\n", err)
+		fmt.Printf("Error creating chat session: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Start interactive chat
 	if err := session.StartInteractive(); err != nil {
-		fmt.Printf("❌ Error in interactive mode: %v\n", err)
+		fmt.Printf("Error in interactive mode: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -457,7 +391,7 @@ func init() {
 
 	go func() {
 		<-c
-		fmt.Println("\n🔄 Shutting down gracefully...")
+		fmt.Println("\nShutting down gracefully...")
 
 		// Shutdown ML service
 		ml.Shutdown()

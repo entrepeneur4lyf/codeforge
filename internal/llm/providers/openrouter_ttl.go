@@ -42,17 +42,17 @@ func NewTTLService(apiKey string) *TTLService {
 // Start begins the TTL enforcement background service
 func (s *TTLService) Start(ctx context.Context) {
 	if s.isRunning {
-		fmt.Println("⚠️ TTL service already running")
+		fmt.Println("TTL service already running")
 		return
 	}
 
 	if s.apiKey == "" {
-		fmt.Println("⚠️ No OpenRouter API key available, TTL service disabled")
+		fmt.Println("No OpenRouter API key available, TTL service disabled")
 		return
 	}
 
 	s.isRunning = true
-	fmt.Println("🚀 Starting OpenRouter TTL enforcement service")
+	fmt.Println("Starting OpenRouter TTL enforcement service")
 
 	go s.runTTLEnforcement(ctx)
 }
@@ -81,11 +81,11 @@ func (s *TTLService) runTTLEnforcement(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("🔄 TTL service stopped due to context cancellation")
+			fmt.Println("TTL service stopped due to context cancellation")
 			return
 
 		case <-s.stopChan:
-			fmt.Println("🔄 TTL service stopped")
+			fmt.Println("TTL service stopped")
 			return
 
 		case <-initialTimer.C:
@@ -103,44 +103,44 @@ func (s *TTLService) performTTLCheck(ctx context.Context) {
 
 	// Check if models need refresh
 	if !s.handler.isDatabaseCacheValid(ctx) {
-		fmt.Println("🔄 Model cache expired, refreshing...")
+		fmt.Println("Model cache expired, refreshing...")
 
 		// Cleanup expired data
 		if err := s.handler.cleanupExpiredModels(ctx); err != nil {
-			fmt.Printf("⚠️ Model cleanup error: %v\n", err)
+			fmt.Printf("Model cleanup error: %v\n", err)
 		}
 
 		if err := s.handler.cleanupStaleMetadata(ctx); err != nil {
-			fmt.Printf("⚠️ Metadata cleanup error: %v\n", err)
+			fmt.Printf("Metadata cleanup error: %v\n", err)
 		}
 
 		// Refresh models
 		if _, err := s.handler.GetOpenRouterModels(ctx); err != nil {
-			fmt.Printf("❌ Failed to refresh models: %v\n", err)
+			fmt.Printf("Failed to refresh models: %v\n", err)
 		} else {
-			fmt.Println("✅ Models refreshed successfully")
+			fmt.Println("Models refreshed successfully")
 		}
 	} else {
-		fmt.Println("✅ Model cache is still valid")
+		fmt.Println("Model cache is still valid")
 
 		// Still run cleanup for very old data
 		if err := s.handler.cleanupExpiredModels(ctx); err != nil {
-			fmt.Printf("⚠️ Cleanup warning: %v\n", err)
+			fmt.Printf("Cleanup warning: %v\n", err)
 		}
 	}
 }
 
 // ForceRefresh manually triggers a model refresh regardless of TTL
 func (s *TTLService) ForceRefresh(ctx context.Context) error {
-	fmt.Println("🔄 Force refreshing OpenRouter models...")
+	fmt.Println("Force refreshing OpenRouter models...")
 
 	// Cleanup first
 	if err := s.handler.cleanupExpiredModels(ctx); err != nil {
-		fmt.Printf("⚠️ Cleanup warning: %v\n", err)
+		fmt.Printf("Cleanup warning: %v\n", err)
 	}
 
 	if err := s.handler.cleanupStaleMetadata(ctx); err != nil {
-		fmt.Printf("⚠️ Metadata cleanup warning: %v\n", err)
+		fmt.Printf("Metadata cleanup warning: %v\n", err)
 	}
 
 	// Force refresh
@@ -149,7 +149,7 @@ func (s *TTLService) ForceRefresh(ctx context.Context) error {
 		return fmt.Errorf("failed to force refresh models: %w", err)
 	}
 
-	fmt.Println("✅ Force refresh completed successfully")
+	fmt.Println("Force refresh completed successfully")
 	return nil
 }
 

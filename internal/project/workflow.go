@@ -24,17 +24,17 @@ func NewPRDWorkflow(service *Service) *PRDWorkflow {
 
 // RunInteractivePRDCreation runs the interactive PRD creation workflow
 func (w *PRDWorkflow) RunInteractivePRDCreation(ctx context.Context) (*ProjectOverview, error) {
-	fmt.Println("🚀 CodeForge PRD Creation Workflow")
+	fmt.Println("CodeForge PRD Creation Workflow")
 	fmt.Println("Let's create a comprehensive project overview for your application.")
 	fmt.Println()
 
 	// Check if existing project
 	if w.service.HasExistingProject() {
-		fmt.Println("📁 Existing project detected. Would you like to:")
+		fmt.Println("Existing project detected. Would you like to:")
 		fmt.Println("1. Analyze existing codebase automatically")
 		fmt.Println("2. Create PRD manually through questions")
 		fmt.Print("Choose option (1 or 2): ")
-		
+
 		choice := w.readInput()
 		if choice == "1" {
 			return w.service.AnalyzeExistingProject()
@@ -43,7 +43,7 @@ func (w *PRDWorkflow) RunInteractivePRDCreation(ctx context.Context) (*ProjectOv
 
 	// Gather PRD information through questions
 	questions := w.askPRDQuestions()
-	
+
 	// Create project overview from responses
 	overview, err := w.service.CreatePRDFromQuestions(questions)
 	if err != nil {
@@ -52,7 +52,7 @@ func (w *PRDWorkflow) RunInteractivePRDCreation(ctx context.Context) (*ProjectOv
 
 	// Show preview and get approval
 	if approved := w.showPreviewAndGetApproval(overview); !approved {
-		fmt.Println("❌ PRD creation cancelled.")
+		fmt.Println("PRD creation cancelled.")
 		return nil, fmt.Errorf("PRD creation cancelled by user")
 	}
 
@@ -61,8 +61,8 @@ func (w *PRDWorkflow) RunInteractivePRDCreation(ctx context.Context) (*ProjectOv
 		return nil, fmt.Errorf("failed to save PRD files: %w", err)
 	}
 
-	fmt.Println("✅ PRD created successfully!")
-	fmt.Println("📄 Files created:")
+	fmt.Println("PRD created successfully!")
+	fmt.Println("Files created:")
 	fmt.Println("  - project-overview.md (comprehensive documentation)")
 	fmt.Println("  - AGENT.md (concise context for AI)")
 	fmt.Println()
@@ -72,7 +72,7 @@ func (w *PRDWorkflow) RunInteractivePRDCreation(ctx context.Context) (*ProjectOv
 
 // askPRDQuestions asks the essential PRD questions
 func (w *PRDWorkflow) askPRDQuestions() PRDQuestions {
-	fmt.Println("📋 Please answer the following questions to create your PRD:")
+	fmt.Println("Please answer the following questions to create your PRD:")
 	fmt.Println()
 
 	questions := PRDQuestions{}
@@ -124,17 +124,17 @@ func (w *PRDWorkflow) showPreviewAndGetApproval(overview *ProjectOverview) bool 
 	fmt.Println()
 	fmt.Println("📖 PRD Preview:")
 	fmt.Println("================")
-	
+
 	// Show concise summary (what will go in AGENT.md)
 	summary := w.service.GenerateProjectSummary(overview)
 	fmt.Println(summary)
-	
+
 	fmt.Println("================")
 	fmt.Println()
 	fmt.Print("What do you think of this overview? Do you have any changes? (approve/edit/cancel): ")
-	
+
 	response := strings.ToLower(w.readInput())
-	
+
 	switch response {
 	case "approve", "yes", "y", "ok", "good", "":
 		return true
@@ -163,9 +163,9 @@ func (w *PRDWorkflow) handleEdits(overview *ProjectOverview) bool {
 	fmt.Println("9. Additional notes")
 	fmt.Println("0. Done editing")
 	fmt.Print("Choose option (0-9): ")
-	
+
 	choice := w.readInput()
-	
+
 	switch choice {
 	case "1":
 		fmt.Print("New project description: ")
@@ -206,39 +206,65 @@ func (w *PRDWorkflow) handleEdits(overview *ProjectOverview) bool {
 		fmt.Println("Invalid option. Please choose 0-9.")
 		return w.handleEdits(overview)
 	}
-	
+
 	// Continue editing
 	return w.handleEdits(overview)
 }
 
 // QuickPRDFromExisting creates a PRD from existing project analysis
 func (w *PRDWorkflow) QuickPRDFromExisting(ctx context.Context) (*ProjectOverview, error) {
-	fmt.Println("🔍 Analyzing existing project...")
-	
+	fmt.Fprintf(os.Stderr, "DEBUG: Starting AnalyzeExistingProject\n")
 	overview, err := w.service.AnalyzeExistingProject()
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze existing project: %w", err)
 	}
-	
-	fmt.Println("✅ Project analysis complete!")
-	
-	// Show preview and get approval
-	if approved := w.showPreviewAndGetApproval(overview); !approved {
-		fmt.Println("❌ PRD creation cancelled.")
-		return nil, fmt.Errorf("PRD creation cancelled by user")
-	}
-	
+	fmt.Fprintf(os.Stderr, "DEBUG: Analysis complete, starting CreatePRDFiles\n")
+
+	// Analysis complete (spinner handled by command level)
+	// Skip approval for automatic analysis - just save the files
+
 	// Save the PRD files
 	if err := w.service.CreatePRDFiles(overview); err != nil {
 		return nil, fmt.Errorf("failed to save PRD files: %w", err)
 	}
-	
-	fmt.Println("✅ PRD created from existing project!")
-	fmt.Println("📄 Files created:")
-	fmt.Println("  - project-overview.md (comprehensive documentation)")
-	fmt.Println("  - AGENT.md (concise context for AI)")
-	fmt.Println()
-	
+	fmt.Fprintf(os.Stderr, "DEBUG: CreatePRDFiles complete\n")
+
+	// Files created silently for automatic analysis
+
+	return overview, nil
+}
+
+// UpdateExistingPRD reads existing AGENT.md, analyzes current project, and updates documentation
+func (w *PRDWorkflow) UpdateExistingPRD(ctx context.Context) (*ProjectOverview, error) {
+	// Read existing AGENT.md content
+	existingContent, err := w.service.readFile("AGENT.md")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read existing AGENT.md: %w", err)
+	}
+
+	// Analyze current project state
+	overview, err := w.service.AnalyzeExistingProject()
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze current project: %w", err)
+	}
+
+	// Update AGENT.md with current analysis (incremental update)
+	updatedSummary := w.service.UpdateProjectSummary(overview, existingContent)
+	err = w.service.writeFile("AGENT.md", []byte(updatedSummary))
+	if err != nil {
+		return nil, fmt.Errorf("failed to update AGENT.md: %w", err)
+	}
+
+	// Create/update comprehensive project-overview.md
+	err = w.service.SaveProjectOverview(overview)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save project overview: %w", err)
+	}
+
+	// Clear spinner and show completion
+	fmt.Print("\r")
+	fmt.Println("Project documentation updated!")
+
 	return overview, nil
 }
 
@@ -249,25 +275,25 @@ func (w *PRDWorkflow) CheckAndOfferPRDCreation(ctx context.Context) (*ProjectOve
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for existing PRD: %w", err)
 	}
-	
+
 	if hasExisting {
-		fmt.Println("📄 Existing project documentation found.")
+		fmt.Println("Existing project documentation found.")
 		fmt.Printf("Content preview:\n%s\n", content[:min(200, len(content))])
 		fmt.Print("Would you like to create a new PRD anyway? (y/n): ")
-		
+
 		if strings.ToLower(w.readInput()) != "y" {
 			return nil, nil // User doesn't want to create new PRD
 		}
 	}
-	
+
 	// Offer PRD creation
-	fmt.Println("📋 No project overview found.")
+	fmt.Println("No project overview found.")
 	fmt.Print("Would you like to create a Project Requirements Document (PRD)? (y/n): ")
-	
+
 	if strings.ToLower(w.readInput()) != "y" {
 		return nil, nil // User doesn't want to create PRD
 	}
-	
+
 	return w.RunInteractivePRDCreation(ctx)
 }
 

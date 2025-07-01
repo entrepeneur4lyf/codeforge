@@ -22,7 +22,7 @@ lsp:
 mcp:
   filesystem:
     command: ["npx", "@modelcontextprotocol/server-filesystem"]
-    args: ["/tmp"]
+    args: ["."]
     description: "File system access tool"
     enabled: true
     env: {}

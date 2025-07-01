@@ -3,32 +3,40 @@ package project
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 // AnalyzeExistingProject analyzes an existing codebase to generate a PRD
 func (s *Service) AnalyzeExistingProject() (*ProjectOverview, error) {
-	projectName := s.extractProjectName()
+	// Get project name from directory
+	projectName := "CodeForge"
+	if s.workingDir != "" {
+		projectName = filepath.Base(s.workingDir)
+	}
 
-	// Detect project type and tech stack
-	projectType := s.detectProjectType()
-	techStack := s.detectTechStack()
-
-	// Generate description based on analysis
-	description := s.generateAnalysisDescription(projectType, techStack)
-
+	// Create a basic overview without complex analysis
 	overview := &ProjectOverview{
-		ProjectName:     projectName,
-		Description:     description,
-		AppType:         projectType,
-		TechStack:       techStack,
-		TargetUsers:     []string{}, // To be filled by user if needed
-		SimilarApps:     []string{}, // To be filled by user if needed
-		DesignExamples:  []string{}, // To be filled by user if needed
-		Authentication:  s.detectAuthConfig(),
-		Billing:         BillingConfig{Required: false}, // Default to no billing
-		AdditionalNotes: "Generated from existing codebase analysis",
+		ProjectName: projectName,
+		Description: fmt.Sprintf("A software project named %s. Generated from automatic codebase analysis.", projectName),
+		AppType:     "software project",
+		TechStack: TechStack{
+			Backend:    "detected",
+			Framework:  "",
+			Frontend:   "",
+			Database:   "",
+			Deployment: "",
+			Suggested:  false,
+			Reasoning:  "Basic automatic analysis",
+		},
+		TargetUsers:     []string{},
+		SimilarApps:     []string{},
+		DesignExamples:  []string{},
+		Authentication:  AuthConfig{Required: false},
+		Billing:         BillingConfig{Required: false},
+		AdditionalNotes: "Generated from automatic codebase analysis",
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 		Metadata: map[string]string{
@@ -311,7 +319,8 @@ func (s *Service) detectAuthConfig() AuthConfig {
 
 // hasFile checks if a file or directory exists
 func (s *Service) hasFile(path string) bool {
-	_, err := s.readFile(path)
+	fullPath := filepath.Join(s.workingDir, path)
+	_, err := os.Stat(fullPath)
 	return err == nil
 }
 

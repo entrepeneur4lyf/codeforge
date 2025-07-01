@@ -633,9 +633,9 @@ func (h *OpenRouterHandler) refreshModelsInDatabase(ctx context.Context) ([]Open
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// 🚀 EFFICIENT APPROACH: Store lightweight model list only
+	// EFFICIENT APPROACH: Store lightweight model list only
 	// Metadata will be fetched on-demand when users actually need it
-	fmt.Printf("📋 Processing %d models (lightweight sync)\n", len(response.Data))
+	fmt.Printf("Processing %d models (lightweight sync)\n", len(response.Data))
 
 	// Sort models by release date DESC (newest first) - using basic data
 	sort.Slice(response.Data, func(i, j int) bool {
@@ -754,7 +754,7 @@ func (h *OpenRouterHandler) ensureTablesExist(ctx context.Context) error {
 // syncModelList efficiently syncs the lightweight model list
 func (h *OpenRouterHandler) syncModelList(ctx context.Context, models []OpenRouterModel) error {
 	if h.db == nil {
-		fmt.Printf("📋 No database connection - using memory cache only\n")
+		fmt.Printf("No database connection - using memory cache only\n")
 		return nil
 	}
 
@@ -763,7 +763,7 @@ func (h *OpenRouterHandler) syncModelList(ctx context.Context, models []OpenRout
 		return fmt.Errorf("failed to ensure tables exist: %w", err)
 	}
 
-	fmt.Printf("📋 Syncing %d models to database (lightweight)\n", len(models))
+	fmt.Printf("Syncing %d models to database (lightweight)\n", len(models))
 
 	// 1. Get current model IDs from database
 	existingModels, err := h.getExistingModelIDs(ctx)
@@ -807,13 +807,13 @@ func (h *OpenRouterHandler) getModelMetadata(ctx context.Context, modelID string
 	if cachedModel, err := h.getModelMetadataFromDB(ctx, modelID); err == nil {
 		// Check if metadata is still fresh (7 days TTL for metadata)
 		if !h.isMetadataStale(ctx, modelID) {
-			fmt.Printf("📋 Using cached metadata for %s\n", modelID)
+			fmt.Printf("Using cached metadata for %s\n", modelID)
 			return cachedModel, nil
 		}
 	}
 
 	// 2. Metadata missing or stale, fetch from API
-	fmt.Printf("🔄 Fetching fresh metadata for %s\n", modelID)
+	fmt.Printf("Fetching fresh metadata for %s\n", modelID)
 	model, err := h.getDetailedModelMetadata(ctx, OpenRouterModel{ID: modelID})
 	if err != nil {
 		return nil, err
@@ -861,13 +861,13 @@ func (h *OpenRouterHandler) getModelMetadataFromDB(ctx context.Context, modelID 
 	// Deserialize JSON fields if available
 	if architectureJSON.Valid && architectureJSON.String != "" {
 		if err := json.Unmarshal([]byte(architectureJSON.String), &model.Architecture); err != nil {
-			fmt.Printf("⚠️ Failed to unmarshal architecture for %s: %v\n", modelID, err)
+			fmt.Printf("Failed to unmarshal architecture for %s: %v\n", modelID, err)
 		}
 	}
 
 	if endpointsJSON.Valid && endpointsJSON.String != "" {
 		if err := json.Unmarshal([]byte(endpointsJSON.String), &model.Endpoints); err != nil {
-			fmt.Printf("⚠️ Failed to unmarshal endpoints for %s: %v\n", modelID, err)
+			fmt.Printf("Failed to unmarshal endpoints for %s: %v\n", modelID, err)
 		}
 	}
 
@@ -1000,7 +1000,7 @@ func (h *OpenRouterHandler) updateLastSeen(ctx context.Context, currentModels ma
 		return fmt.Errorf("failed to update last_seen: %w", err)
 	}
 
-	fmt.Printf("🔄 Updated last_seen for %d models\n", len(currentModels))
+	fmt.Printf("Updated last_seen for %d models\n", len(currentModels))
 	return nil
 }
 
@@ -1094,7 +1094,7 @@ func (h *OpenRouterHandler) getDetailedModelMetadata(ctx context.Context, model 
 	// Store the comprehensive metadata in database
 	if err := h.storeModelMetadata(ctx, enrichedModel); err != nil {
 		// Log warning but don't fail - we still have the enriched model
-		fmt.Printf("⚠️ Failed to store metadata for %s: %v\n", enrichedModel.ID, err)
+		fmt.Printf("Failed to store metadata for %s: %v\n", enrichedModel.ID, err)
 	}
 
 	return enrichedModel, nil
@@ -1319,19 +1319,19 @@ func RefreshModelsIfExpired(ctx context.Context, apiKey string) error {
 
 	// Check if refresh is needed
 	if handler.isDatabaseCacheValid(ctx) {
-		fmt.Println("✅ Model cache is still valid, no refresh needed")
+		fmt.Println("Model cache is still valid, no refresh needed")
 		return nil
 	}
 
-	fmt.Println("🔄 Model cache expired, refreshing...")
+	fmt.Println("Model cache expired, refreshing...")
 
 	// Cleanup expired data first
 	if err := handler.cleanupExpiredModels(ctx); err != nil {
-		fmt.Printf("⚠️ Cleanup warning: %v\n", err)
+		fmt.Printf("Cleanup warning: %v\n", err)
 	}
 
 	if err := handler.cleanupStaleMetadata(ctx); err != nil {
-		fmt.Printf("⚠️ Metadata cleanup warning: %v\n", err)
+		fmt.Printf("Metadata cleanup warning: %v\n", err)
 	}
 
 	// Refresh models
@@ -1340,7 +1340,7 @@ func RefreshModelsIfExpired(ctx context.Context, apiKey string) error {
 		return fmt.Errorf("failed to refresh models: %w", err)
 	}
 
-	fmt.Println("✅ Model cache refreshed successfully")
+	fmt.Println("Model cache refreshed successfully")
 	return nil
 }
 

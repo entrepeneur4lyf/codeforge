@@ -3,6 +3,8 @@ package commands
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/config"
 	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
@@ -13,6 +15,36 @@ import (
 type PRDCommand struct {
 	projectService *project.Service
 	workflow       *project.PRDWorkflow
+}
+
+// animatedSpinner shows an animated spinner with message and dots
+func animatedSpinner(message string, done chan bool) {
+	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	frameIndex := 0
+	dotCount := 0
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			fmt.Print("\r\033[K") // Clear line
+			return
+		case <-ticker.C:
+			dots := ""
+			for i := 0; i < dotCount; i++ {
+				dots += "."
+			}
+
+			fmt.Printf("\r%s %s%s", spinnerFrames[frameIndex], message, dots)
+
+			frameIndex = (frameIndex + 1) % len(spinnerFrames)
+			if frameIndex == 0 {
+				dotCount = (dotCount + 1) % 4 // 0, 1, 2, 3 dots
+			}
+		}
+	}
 }
 
 // NewPRDCommand creates a new PRD command
@@ -37,6 +69,8 @@ func (cmd *PRDCommand) Execute(ctx context.Context, args []string) error {
 		return cmd.createPRD(ctx)
 	case "analyze":
 		return cmd.analyzePRD(ctx)
+	case "update":
+		return cmd.updatePRD(ctx)
 	case "check":
 		return cmd.checkPRD(ctx)
 	case "help", "--help", "-h":
@@ -49,7 +83,7 @@ func (cmd *PRDCommand) Execute(ctx context.Context, args []string) error {
 
 // createPRD creates a new PRD through interactive workflow
 func (cmd *PRDCommand) createPRD(ctx context.Context) error {
-	fmt.Println("🚀 Starting PRD creation workflow...")
+	fmt.Println("Starting PRD creation workflow...")
 
 	overview, err := cmd.workflow.RunInteractivePRDCreation(ctx)
 	if err != nil {
@@ -57,7 +91,7 @@ func (cmd *PRDCommand) createPRD(ctx context.Context) error {
 	}
 
 	if overview != nil {
-		fmt.Printf("✅ PRD created successfully for project: %s\n", overview.ProjectName)
+		fmt.Printf("PRD created successfully for project: %s\n", overview.ProjectName)
 	}
 
 	return nil
@@ -65,20 +99,64 @@ func (cmd *PRDCommand) createPRD(ctx context.Context) error {
 
 // analyzePRD analyzes existing project and creates PRD
 func (cmd *PRDCommand) analyzePRD(ctx context.Context) error {
-	fmt.Println("🔍 Analyzing existing project...")
+	// Start animated spinner
+	done := make(chan bool)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		animatedSpinner("Analyzing project... one moment", done)
+	}()
 
 	if !cmd.projectService.HasExistingProject() {
-		fmt.Println("❌ No existing project detected. Use 'codeforge prd create' for new projects.")
-		return nil
+		// No real project found - start PRD workflow instead
+		done <- true
+		wg.Wait()
+		return cmd.createPRD(ctx)
 	}
 
 	overview, err := cmd.workflow.QuickPRDFromExisting(ctx)
+
+	// Stop spinner
+	done <- true
+	wg.Wait()
+
 	if err != nil {
 		return fmt.Errorf("project analysis failed: %w", err)
 	}
 
 	if overview != nil {
-		fmt.Printf("✅ PRD generated from project analysis: %s\n", overview.ProjectName)
+		fmt.Printf("Project analysis complete! Generated: %s\n", overview.ProjectName)
+		fmt.Println("\nWhat can I do for you today?")
+	}
+
+	return nil
+}
+
+// updatePRD reads existing AGENT.md, analyzes current project, and updates documentation
+func (cmd *PRDCommand) updatePRD(ctx context.Context) error {
+	// Start animated spinner
+	done := make(chan bool)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		animatedSpinner("Analyzing project... one moment", done)
+	}()
+
+	overview, err := cmd.workflow.UpdateExistingPRD(ctx)
+
+	// Stop spinner
+	done <- true
+	wg.Wait()
+
+	if err != nil {
+		return fmt.Errorf("project update failed: %w", err)
+	}
+
+	if overview != nil {
+		fmt.Printf("Project documentation updated: %s\n", overview.ProjectName)
+		fmt.Println("\nWhat can I do for you today?")
 	}
 
 	return nil
@@ -92,7 +170,7 @@ func (cmd *PRDCommand) checkPRD(ctx context.Context) error {
 	}
 
 	if hasExisting {
-		fmt.Println("📄 Existing PRD found:")
+		fmt.Println("Existing PRD found:")
 		fmt.Println("================")
 		// Show first 300 characters
 		preview := content
@@ -104,7 +182,7 @@ func (cmd *PRDCommand) checkPRD(ctx context.Context) error {
 		return nil
 	}
 
-	fmt.Println("📋 No PRD found.")
+	fmt.Println("No PRD found.")
 
 	// Offer to create one
 	overview, err := cmd.workflow.CheckAndOfferPRDCreation(ctx)
@@ -113,7 +191,7 @@ func (cmd *PRDCommand) checkPRD(ctx context.Context) error {
 	}
 
 	if overview != nil {
-		fmt.Printf("✅ PRD created: %s\n", overview.ProjectName)
+		fmt.Printf("PRD created: %s\n", overview.ProjectName)
 	} else {
 		fmt.Println("ℹ️  PRD creation skipped.")
 	}
@@ -173,6 +251,7 @@ func (cmd *PRDCommand) ValidateArgs(args []string) error {
 	validCommands := map[string]bool{
 		"create":  true,
 		"analyze": true,
+		"update":  true, // Internal use only
 		"check":   true,
 		"help":    true,
 		"--help":  true,

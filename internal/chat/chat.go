@@ -324,7 +324,7 @@ func (cs *ChatSession) StartInteractive() error {
 			if cs.quiet {
 				fmt.Printf("Error: %v\n", err)
 			} else {
-				fmt.Printf("❌ Error: %v\n", err)
+				fmt.Printf("Error: %v\n", err)
 			}
 			continue
 		}
@@ -450,7 +450,7 @@ func (cs *ChatSession) processWithAgent(ctx context.Context, userInput string) (
 
 	// Show usage info in non-quiet mode
 	if !cs.quiet && usage != nil {
-		fmt.Printf("\n\n💡 Tokens: %d input, %d output", usage.PromptTokens, usage.CompletionTokens)
+		fmt.Printf("\n\nTokens: %d input, %d output", usage.PromptTokens, usage.CompletionTokens)
 		if usage.TotalCost > 0 {
 			fmt.Printf(" | Cost: $%.4f", usage.TotalCost)
 		}
@@ -549,7 +549,7 @@ func (cs *ChatSession) ProcessMessage(userInput string) (string, error) {
 
 	// Show usage info in non-quiet mode
 	if !cs.quiet && usage != nil {
-		fmt.Printf("\n\n💡 Tokens: %d input, %d output", usage.PromptTokens, usage.CompletionTokens)
+		fmt.Printf("\n\nTokens: %d input, %d output", usage.PromptTokens, usage.CompletionTokens)
 		if usage.TotalCost > 0 {
 			fmt.Printf(" | Cost: $%.4f", usage.TotalCost)
 		}
@@ -621,7 +621,7 @@ func (cs *ChatSession) selectEmbedding() {
 		return
 	}
 
-	fmt.Println("\n🔍 Embedding Provider Selection")
+	fmt.Println("\nEmbedding Provider Selection")
 	fmt.Println("Current: Fallback (simple hash-based)")
 	fmt.Println()
 
@@ -657,7 +657,7 @@ func (cs *ChatSession) selectEmbedding() {
 			if ollamaAvailable {
 				cs.setEmbeddingProvider("ollama")
 			} else {
-				fmt.Println("❌ Ollama not available. Install with:")
+				fmt.Println("Ollama not available. Install with:")
 				fmt.Println("   curl -fsSL https://ollama.ai/install.sh | sh")
 				fmt.Println("   ollama pull nomic-embed-text")
 			}
@@ -665,10 +665,10 @@ func (cs *ChatSession) selectEmbedding() {
 			if openaiAvailable {
 				cs.setEmbeddingProvider("openai")
 			} else {
-				fmt.Println("❌ OpenAI not available. Set OPENAI_API_KEY environment variable.")
+				fmt.Println("OpenAI not available. Set OPENAI_API_KEY environment variable.")
 			}
 		default:
-			fmt.Println("❌ Invalid choice")
+			fmt.Println("Invalid choice")
 		}
 	}
 }
@@ -701,13 +701,13 @@ func (cs *ChatSession) setEmbeddingProvider(provider string) {
 	// Write config back
 	if data, err := json.MarshalIndent(config, "", "  "); err == nil {
 		if err := os.WriteFile(configPath, data, 0644); err == nil {
-			fmt.Printf("✅ Embedding provider set to: %s\n", provider)
-			fmt.Println("💡 Restart CodeForge for changes to take effect")
+			fmt.Printf("Embedding provider set to: %s\n", provider)
+			fmt.Println("Restart CodeForge for changes to take effect")
 		} else {
-			fmt.Printf("❌ Failed to save config: %v\n", err)
+			fmt.Printf("Failed to save config: %v\n", err)
 		}
 	} else {
-		fmt.Printf("❌ Failed to encode config: %v\n", err)
+		fmt.Printf("Failed to encode config: %v\n", err)
 	}
 }
 
@@ -777,7 +777,7 @@ func setProviderSpecificOptions(options *llm.ApiHandlerOptions, provider, apiKey
 func (cs *ChatSession) clearHistory() {
 	cs.messages = []llm.Message{}
 	if !cs.quiet {
-		fmt.Println("✅ Conversation history cleared")
+		fmt.Println("Conversation history cleared")
 	}
 }
 
@@ -842,13 +842,13 @@ func (cs *ChatSession) selectModel() {
 		return
 	}
 
-	fmt.Println("🤖 Opening model selector...")
+	fmt.Println("Opening model selector...")
 
 	selector := NewModelSelector(cs.favorites)
 	provider, model, err := selector.SelectModel()
 
 	if err != nil {
-		fmt.Printf("❌ Model selection failed: %v\n", err)
+		fmt.Printf("Model selection failed: %v\n", err)
 		return
 	}
 
@@ -858,7 +858,7 @@ func (cs *ChatSession) selectModel() {
 	// Create new handler with the selected model
 	apiKey := GetAPIKeyForModel(model)
 	if apiKey == "" {
-		fmt.Printf("❌ No API key found for provider: %s\n", provider)
+		fmt.Printf("No API key found for provider: %s\n", provider)
 		return
 	}
 
@@ -871,12 +871,12 @@ func (cs *ChatSession) selectModel() {
 	// Build the new handler
 	handler, err := providers.BuildApiHandler(options)
 	if err != nil {
-		fmt.Printf("❌ Failed to create handler for %s: %v\n", model, err)
+		fmt.Printf("Failed to create handler for %s: %v\n", model, err)
 		return
 	}
 
 	cs.handler = handler
-	fmt.Printf("✅ Switched to model: %s\n", model)
+	fmt.Printf("Switched to model: %s\n", model)
 }
 
 // showFavorites displays favorite providers and models
@@ -888,11 +888,11 @@ func (cs *ChatSession) showFavorites() {
 	favorites := cs.favorites.GetAllFavorites()
 	if len(favorites) == 0 {
 		fmt.Println("📝 No favorites yet!")
-		fmt.Println("💡 Use the /model command and press spacebar to add favorites")
+		fmt.Println("Use the /model command and press spacebar to add favorites")
 		return
 	}
 
-	fmt.Println("⭐ Your Favorites:")
+	fmt.Println("Your Favorites:")
 	fmt.Println()
 
 	// Group by type
@@ -918,7 +918,7 @@ func (cs *ChatSession) showFavorites() {
 
 	// Show favorite models
 	if len(models) > 0 {
-		fmt.Println("🎯 Favorite Models:")
+		fmt.Println("Favorite Models:")
 		for _, model := range models {
 			fmt.Printf("  • %s\n", model.Name)
 		}
