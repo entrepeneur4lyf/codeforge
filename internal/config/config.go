@@ -161,7 +161,7 @@ var defaultContextPaths = []string{
 	"CodeForge.local.md",
 	"CODEFORGE.md",
 	"CODEFORGE.local.md",
-	"AGENT.md",
+	"AGENTS.md",
 }
 
 // Global configuration instance

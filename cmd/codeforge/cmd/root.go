@@ -9,7 +9,9 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
 	"github.com/entrepeneur4lyf/codeforge/internal/chat"
@@ -17,9 +19,8 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
 	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
 	"github.com/entrepeneur4lyf/codeforge/internal/ml"
+	"github.com/entrepeneur4lyf/codeforge/internal/project"
 	"github.com/spf13/cobra"
-
-	"github.com/entrepeneur4lyf/codeforge/internal/commands"
 )
 
 var (
@@ -79,15 +80,141 @@ func autoGenerateProjectOverview() {
 		return
 	}
 
-	agentMdPath := filepath.Join(workingDir, "AGENT.md")
-	prdCommand := commands.NewPRDCommand(codeforgeApp.Config, codeforgeApp.WorkspaceRoot, codeforgeApp.FileOperationManager)
+	agentMdPath := filepath.Join(workingDir, "AGENTS.md")
+
+	// Create project service directly instead of using CLI command infrastructure
+	projectService := project.NewService(codeforgeApp.Config, workingDir, codeforgeApp.FileOperationManager)
 
 	if _, err := os.Stat(agentMdPath); os.IsNotExist(err) {
-		// AGENT.md doesn't exist - analyze project and create overview
-		prdCommand.Execute(context.Background(), []string{"analyze"})
+		// AGENTS.md doesn't exist - analyze project and create overview
+		analyzeProjectDirectly(projectService)
 	} else {
-		// AGENT.md exists - read it, analyze current project, and update
-		prdCommand.Execute(context.Background(), []string{"update"})
+		// AGENTS.md exists - read it, analyze current project, and update
+		updateProjectDirectly(projectService)
+	}
+}
+
+// animatedSpinner shows an animated spinner with message and dots
+func animatedSpinner(message string, done chan bool) {
+	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	frameIndex := 0
+	dotCount := 0
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			fmt.Print("\r\033[K") // Clear line
+			return
+		case <-ticker.C:
+			dots := ""
+			for i := 0; i < dotCount; i++ {
+				dots += "."
+			}
+
+			fmt.Printf("\r%s %s%s", spinnerFrames[frameIndex], message, dots)
+
+			frameIndex = (frameIndex + 1) % len(spinnerFrames)
+			if frameIndex == 0 {
+				dotCount = (dotCount + 1) % 4 // 0, 1, 2, 3 dots
+			}
+		}
+	}
+}
+
+// analyzeProjectDirectly performs project analysis without CLI command infrastructure
+func analyzeProjectDirectly(projectService *project.Service) {
+	// Start animated spinner
+	done := make(chan bool)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		animatedSpinner("Analyzing project... one moment", done)
+	}()
+
+	if !projectService.HasExistingProject() {
+		// No real project found - skip analysis
+		done <- true
+		wg.Wait()
+		return
+	}
+
+	// Analyze the project
+	overview, err := projectService.AnalyzeExistingProject()
+	if err != nil {
+		done <- true
+		wg.Wait()
+		fmt.Printf("Project analysis failed: %v\n", err)
+		return
+	}
+
+	// Create PRD files
+	if err := projectService.CreatePRDFiles(overview); err != nil {
+		done <- true
+		wg.Wait()
+		fmt.Printf("Failed to save project files: %v\n", err)
+		return
+	}
+
+	// Stop spinner
+	done <- true
+	wg.Wait()
+
+	if overview != nil {
+		fmt.Printf("Project analysis complete! Generated: %s\n", overview.ProjectName)
+	}
+}
+
+// updateProjectDirectly updates existing project documentation without CLI command infrastructure
+func updateProjectDirectly(projectService *project.Service) {
+	// Start animated spinner
+	done := make(chan bool)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		animatedSpinner("Analyzing project... one moment", done)
+	}()
+
+	// Read existing AGENTS.md content
+	agentMdPath := filepath.Join(workingDir, "AGENTS.md")
+	contentBytes, err := os.ReadFile(agentMdPath)
+	if err != nil {
+		done <- true
+		wg.Wait()
+		fmt.Printf("Failed to read existing AGENTS.md: %v\n", err)
+		return
+	}
+	existingContent := string(contentBytes)
+
+	// Analyze current project
+	overview, err := projectService.AnalyzeExistingProject()
+	if err != nil {
+		done <- true
+		wg.Wait()
+		fmt.Printf("Project analysis failed: %v\n", err)
+		return
+	}
+
+	// Update AGENTS.md with current analysis
+	updatedContent := projectService.UpdateProjectSummary(overview, existingContent)
+	agentMdPath = filepath.Join(workingDir, "AGENTS.md")
+	if err := os.WriteFile(agentMdPath, []byte(updatedContent), 0644); err != nil {
+		done <- true
+		wg.Wait()
+		fmt.Printf("Failed to update AGENTS.md: %v\n", err)
+		return
+	}
+
+	// Stop spinner
+	done <- true
+	wg.Wait()
+
+	if overview != nil {
+		fmt.Printf("Project analysis complete! Updated: %s\n", overview.ProjectName)
 	}
 }
 

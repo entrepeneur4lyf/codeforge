@@ -36,8 +36,8 @@ func NewService(cfg *config.Config, workspaceRoot string, fileManager *permissio
 
 // CheckForExistingPRD checks if a project overview already exists
 func (s *Service) CheckForExistingPRD() (bool, string, error) {
-	// Check for AGENT.md first (primary context file)
-	if content, err := s.readFile("AGENT.md"); err == nil {
+	// Check for AGENTS.md first (primary context file)
+	if content, err := s.readFile("AGENTS.md"); err == nil {
 		return true, content, nil
 	}
 
@@ -155,19 +155,19 @@ func (s *Service) SaveProjectOverview(overview *ProjectOverview) error {
 	return nil
 }
 
-// SaveProjectSummary saves the project summary to AGENT.md (context file only)
+// SaveProjectSummary saves the project summary to AGENTS.md (context file only)
 func (s *Service) SaveProjectSummary(overview *ProjectOverview) error {
 	summary := s.GenerateProjectSummary(overview)
 
-	err := s.writeFile("AGENT.md", []byte(summary))
+	err := s.writeFile("AGENTS.md", []byte(summary))
 	if err != nil {
-		return fmt.Errorf("failed to save AGENT.md: %w", err)
+		return fmt.Errorf("failed to save AGENTS.md: %w", err)
 	}
 
 	return nil
 }
 
-// CreatePRDFiles creates both project-overview.md and AGENT.md from overview
+// CreatePRDFiles creates both project-overview.md and AGENTS.md from overview
 func (s *Service) CreatePRDFiles(overview *ProjectOverview) error {
 	// Always use direct file operations for automatic analysis to avoid permission hangs
 	return s.createPRDFilesDirect(overview)
@@ -185,15 +185,15 @@ func (s *Service) createPRDFilesDirect(overview *ProjectOverview) error {
 		return fmt.Errorf("failed to save project-overview.md: %w", err)
 	}
 
-	summaryPath := filepath.Join(s.workingDir, "AGENT.md")
+	summaryPath := filepath.Join(s.workingDir, "AGENTS.md")
 	if err := os.WriteFile(summaryPath, []byte(summaryMarkdown), 0644); err != nil {
-		return fmt.Errorf("failed to save AGENT.md: %w", err)
+		return fmt.Errorf("failed to save AGENTS.md: %w", err)
 	}
 
 	return nil
 }
 
-// UpdateProjectSummary intelligently updates existing AGENT.md with current project analysis
+// UpdateProjectSummary intelligently updates existing AGENTS.md with current project analysis
 func (s *Service) UpdateProjectSummary(overview *ProjectOverview, existingContent string) string {
 	// Generate new summary from current analysis
 	newSummary := s.GenerateProjectSummary(overview)
@@ -246,7 +246,7 @@ func (s *Service) HasExistingProject() bool {
 	}
 
 	for _, file := range projectFiles {
-		if _, err := s.readFile(file); err == nil {
+		if s.hasFile(file) {
 			return true
 		}
 	}

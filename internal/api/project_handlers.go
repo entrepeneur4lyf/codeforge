@@ -154,7 +154,16 @@ func (s *Server) buildProjectStructureRecursive(rootPath, relativePath string, c
 }
 
 // shouldIgnoreDirectory checks if a directory should be ignored
-func (s *Server) shouldIgnoreDirectory(name string) bool {
+func (s *Server) shouldIgnoreDirectory(dirPath string) bool {
+	// Use gitignore filter if available
+	if s.gitignoreFilter != nil {
+		if s.gitignoreFilter.IsIgnored(dirPath) {
+			return true
+		}
+	}
+
+	// Fallback to common ignore patterns
+	name := filepath.Base(dirPath)
 	ignoreDirs := []string{
 		".git", ".svn", ".hg",
 		"node_modules", "vendor", "target",
@@ -173,7 +182,16 @@ func (s *Server) shouldIgnoreDirectory(name string) bool {
 }
 
 // shouldIgnoreFile checks if a file should be ignored
-func (s *Server) shouldIgnoreFile(name string) bool {
+func (s *Server) shouldIgnoreFile(filePath string) bool {
+	// Use gitignore filter if available
+	if s.gitignoreFilter != nil {
+		if s.gitignoreFilter.IsIgnored(filePath) {
+			return true
+		}
+	}
+
+	// Fallback to common ignore patterns
+	name := filepath.Base(filePath)
 	ignoreFiles := []string{
 		".DS_Store", "Thumbs.db",
 		".gitignore", ".gitkeep",

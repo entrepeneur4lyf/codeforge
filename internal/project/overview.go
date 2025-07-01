@@ -343,7 +343,7 @@ func (s *Service) GenerateProjectOverviewMarkdown(overview *ProjectOverview) str
 	return md.String()
 }
 
-// GenerateProjectSummary creates a concise summary for AGENT.md (context only)
+// GenerateProjectSummary creates a concise summary for AGENTS.md (context only)
 func (s *Service) GenerateProjectSummary(overview *ProjectOverview) string {
 	var summary strings.Builder
 

@@ -9,12 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/entrepeneur4lyf/codeforge/internal/utils"
 )
 
 // SimpleScanner provides basic code analysis without external dependencies
 type SimpleScanner struct {
-	graph   *CodeGraph
-	fileSet *token.FileSet
+	graph           *CodeGraph
+	fileSet         *token.FileSet
+	gitignoreFilter *utils.GitIgnoreFilter
 
 	// Configuration
 	maxFileSize    int64
@@ -32,6 +35,19 @@ func NewSimpleScanner(graph *CodeGraph) *SimpleScanner {
 		includeTests:   true,
 		includeDocs:    true,
 		includeConfigs: true,
+	}
+}
+
+// NewSimpleScannerWithRoot creates a new simple scanner with gitignore support
+func NewSimpleScannerWithRoot(graph *CodeGraph, rootPath string) *SimpleScanner {
+	return &SimpleScanner{
+		graph:           graph,
+		fileSet:         token.NewFileSet(),
+		gitignoreFilter: utils.NewGitIgnoreFilter(rootPath),
+		maxFileSize:     10 * 1024 * 1024, // 10MB max file size
+		includeTests:    true,
+		includeDocs:     true,
+		includeConfigs:  true,
 	}
 }
 
@@ -102,7 +118,14 @@ func (s *SimpleScanner) ScanRepository(rootPath string) error {
 
 // shouldIgnore checks if a path should be ignored
 func (s *SimpleScanner) shouldIgnore(path string) bool {
-	// Common ignore patterns
+	// Use gitignore filter if available
+	if s.gitignoreFilter != nil {
+		if s.gitignoreFilter.IsIgnored(path) {
+			return true
+		}
+	}
+
+	// Fallback to common ignore patterns
 	ignorePatterns := []string{
 		".git", ".svn", ".hg",
 		"node_modules", "vendor", "target",

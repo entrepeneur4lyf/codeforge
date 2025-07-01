@@ -33,13 +33,13 @@ func BuildApiHandler(options llm.ApiHandlerOptions) (llm.ApiHandler, error) {
 	var handler llm.ApiHandler
 	switch providerType {
 	case llm.ProviderAnthropic:
-		handler = NewAnthropicHandler(options)
+		handler = NewAnthropicSDKHandler(options)
 	case llm.ProviderOpenAI:
-		handler = NewOpenAIHandler(options)
+		handler = NewOpenAISDKHandler(options)
 	case llm.ProviderGemini:
 		handler = NewGeminiHandler(options)
 	case llm.ProviderOpenRouter:
-		handler = NewOpenRouterHandler(options)
+		handler = NewOpenRouterSDKHandler(options)
 	case llm.ProviderBedrock:
 		handler = NewBedrockHandler(options)
 	case llm.ProviderVertex:
@@ -173,6 +173,7 @@ func isAnthropicModel(modelID string) bool {
 	anthropicPrefixes := []string{
 		"claude-",
 		"anthropic.",
+		"anthropic/",
 	}
 
 	for _, prefix := range anthropicPrefixes {

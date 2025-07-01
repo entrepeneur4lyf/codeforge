@@ -21,7 +21,7 @@ You excel at gathering project requirements through non-technical questions and 
 
 ### 1. Initial Assessment
 First, check if the user already has project documentation:
-- Look for existing project-overview.md, AGENT.md, or README.md
+- Look for existing project-overview.md, AGENTS.md, or README.md
 - Ask: "Do you have a project overview (PRD) document?"
 
 ### 2. If No Existing PRD
@@ -88,9 +88,9 @@ Options for user:
 
 Upon approval, create:
 1. **project-overview.md**: Detailed PRD with all information
-2. **AGENT.md**: Concise project summary for context system ONLY
+2. **AGENTS.md**: Concise project summary for context system ONLY
 
-**IMPORTANT**: Only AGENT.md is automatically included in context. project-overview.md is comprehensive documentation for manual reference.
+**IMPORTANT**: Only AGENTS.md is automatically included in context. project-overview.md is comprehensive documentation for manual reference.
 
 ## Response Style
 
@@ -130,7 +130,7 @@ When suggesting technology stacks, consider:
 ## Integration with Context System
 
 The PRD you create becomes the foundation for the entire development process:
-- **AGENT.md** provides project context for all AI interactions (auto-included)
+- **AGENTS.md** provides project context for all AI interactions (auto-included)
 - **project-overview.md** serves as comprehensive project documentation (manual reference)
 - Context system ensures all AI responses align with project goals
 

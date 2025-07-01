@@ -414,8 +414,8 @@ func (ms *ModelSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return ms, ms.loadModels("openrouter")
 				}
 			} else {
-				// Select model and finish
-				if ms.selectedIndex < len(ms.models) {
+				// Select model and finish (SelectingModel mode)
+				if !ms.loading && ms.selectedIndex < len(ms.models) {
 					model := ms.models[ms.selectedIndex]
 					ms.result <- SelectionResult{
 						Provider: model.Provider,
@@ -773,18 +773,7 @@ func (ms *ModelSelector) loadDefaultModels(providerID string) []ModelInfo {
 				InputPrice: 15.0, OutputPrice: 75.0, Capabilities: []string{"text", "code", "vision", "reasoning"},
 			},
 		},
-		"openai": {
-			{
-				Name: "GPT-4o (Latest)", ID: "gpt-4o-2024-08-06", Provider: providerID,
-				Description: "Multimodal flagship model", ContextLength: 128000,
-				InputPrice: 5.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "audio"},
-			},
-			{
-				Name: "GPT-4o Mini (Latest)", ID: "gpt-4o-mini-2024-07-18", Provider: providerID,
-				Description: "Affordable and intelligent small model", ContextLength: 128000,
-				InputPrice: 0.15, OutputPrice: 0.6, Capabilities: []string{"text", "code", "speed"},
-			},
-		},
+		"openai": ms.loadOpenAIModels(providerID),
 		"openrouter": {
 			{
 				Name: "Claude 3.5 Sonnet", ID: "anthropic/claude-3.5-sonnet", Provider: providerID,
@@ -804,6 +793,113 @@ func (ms *ModelSelector) loadDefaultModels(providerID string) []ModelInfo {
 			model.Favorite = ms.favorites.IsModelFavorite(model.ID)
 			models = append(models, model)
 		}
+	}
+
+	return models
+}
+
+// loadOpenAIModels loads OpenAI models dynamically using the SDK
+func (ms *ModelSelector) loadOpenAIModels(providerID string) []ModelInfo {
+	// Try to get OpenAI API key
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		// Return fallback models if no API key
+		return []ModelInfo{
+			{
+				Name: "GPT-4o (Latest)", ID: "gpt-4o", Provider: providerID,
+				Description: "Multimodal flagship model", ContextLength: 128000,
+				InputPrice: 5.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "audio"},
+			},
+			{
+				Name: "GPT-4o Mini (Latest)", ID: "gpt-4o-mini", Provider: providerID,
+				Description: "Affordable and intelligent small model", ContextLength: 128000,
+				InputPrice: 0.15, OutputPrice: 0.6, Capabilities: []string{"text", "code", "speed"},
+			},
+		}
+	}
+
+	// Fetch models from OpenAI API
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	openaiModels, err := providers.GetOpenAIModels(ctx, apiKey)
+	if err != nil {
+		// Return fallback models on error
+		return []ModelInfo{
+			{
+				Name: "GPT-4o (Latest)", ID: "gpt-4o", Provider: providerID,
+				Description: "Multimodal flagship model", ContextLength: 128000,
+				InputPrice: 5.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "audio"},
+			},
+			{
+				Name: "GPT-4o Mini (Latest)", ID: "gpt-4o-mini", Provider: providerID,
+				Description: "Affordable and intelligent small model", ContextLength: 128000,
+				InputPrice: 0.15, OutputPrice: 0.6, Capabilities: []string{"text", "code", "speed"},
+			},
+		}
+	}
+
+	// Convert OpenAI models to ModelInfo
+	var models []ModelInfo
+	for _, model := range openaiModels {
+		// Create user-friendly name
+		name := strings.ReplaceAll(model.ID, "-", " ")
+		// Convert to title case manually since strings.Title is deprecated
+		words := strings.Fields(name)
+		for i, word := range words {
+			if len(word) > 0 {
+				words[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
+			}
+		}
+		name = strings.Join(words, " ")
+
+		// Set default pricing and capabilities based on model type
+		var inputPrice, outputPrice float64
+		var capabilities []string
+		var contextLength int
+		var description string
+
+		switch {
+		case strings.Contains(model.ID, "gpt-4o"):
+			inputPrice, outputPrice = 5.0, 15.0
+			capabilities = []string{"text", "code", "vision", "audio"}
+			contextLength = 128000
+			description = "Multimodal flagship model"
+		case strings.Contains(model.ID, "gpt-4"):
+			inputPrice, outputPrice = 30.0, 60.0
+			capabilities = []string{"text", "code", "reasoning"}
+			contextLength = 128000
+			description = "Advanced reasoning model"
+		case strings.Contains(model.ID, "o1"):
+			inputPrice, outputPrice = 15.0, 60.0
+			capabilities = []string{"reasoning", "complex-tasks"}
+			contextLength = 128000
+			description = "Advanced reasoning model"
+		case strings.Contains(model.ID, "gpt-3.5"):
+			inputPrice, outputPrice = 0.5, 1.5
+			capabilities = []string{"text", "code", "speed"}
+			contextLength = 16000
+			description = "Fast and efficient model"
+		default:
+			inputPrice, outputPrice = 2.5, 10.0
+			capabilities = []string{"text", "code"}
+			contextLength = 128000
+			description = "OpenAI model"
+		}
+
+		modelInfo := ModelInfo{
+			Name:          name,
+			ID:            model.ID,
+			Provider:      providerID,
+			Description:   description,
+			ContextLength: contextLength,
+			InputPrice:    inputPrice,
+			OutputPrice:   outputPrice,
+			Capabilities:  capabilities,
+			Favorite:      ms.favorites.IsModelFavorite(model.ID),
+		}
+
+		models = append(models, modelInfo)
 	}
 
 	return models

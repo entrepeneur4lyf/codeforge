@@ -22,16 +22,12 @@ import (
 func GetAPIKeyForModel(model string) string {
 	// Determine provider from model and get corresponding API key
 
-	// OpenRouter models FIRST (most important - supports 300+ models with provider/ format)
+	// Check if this is a provider-specific model (provider/model format)
 	if strings.Contains(model, "/") {
-		// OpenRouter uses provider/model format, so any model with "/" is likely OpenRouter
-		if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
-			return key
-		}
-		// If no OpenRouter key, try to extract provider and use direct provider key
 		parts := strings.Split(model, "/")
 		if len(parts) == 2 {
 			provider := parts[0]
+			// Use provider-specific API key directly for known providers
 			switch provider {
 			case "anthropic":
 				return os.Getenv("ANTHROPIC_API_KEY")
@@ -47,6 +43,11 @@ func GetAPIKeyForModel(model string) string {
 				return os.Getenv("DEEPSEEK_API_KEY")
 			case "cohere":
 				return os.Getenv("COHERE_API_KEY")
+			default:
+				// For unknown providers, try OpenRouter as fallback
+				if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
+					return key
+				}
 			}
 		}
 	}
@@ -277,11 +278,19 @@ Be concise, practical, and focus on actionable solutions. Provide code examples 
 // StartInteractive starts an interactive chat session
 func (cs *ChatSession) StartInteractive() error {
 	if !cs.quiet {
-		fmt.Println("🏗️ CodeForge Interactive Chat")
+		// Show session info first
 		fmt.Printf("Model: %s\n", cs.model)
 		fmt.Println("Type 'exit', 'quit', or press Ctrl+C to end the session")
 		fmt.Println("Type '/help' for available commands")
 		fmt.Println()
+
+		// Send initial greeting to model to get "What can I do for you today?" response
+		_, err := cs.ProcessMessage("Hello")
+		if err != nil {
+			fmt.Printf("Error getting initial response: %v\n", err)
+			// Continue anyway
+		}
+		fmt.Println() // Add spacing after the streamed response
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -321,11 +330,7 @@ func (cs *ChatSession) StartInteractive() error {
 		// Process the message
 		response, err := cs.ProcessMessage(input)
 		if err != nil {
-			if cs.quiet {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Printf("Error: %v\n", err)
-			}
+			fmt.Printf("Error: %v\n", err)
 			continue
 		}
 
@@ -507,11 +512,17 @@ func (cs *ChatSession) ProcessMessage(userInput string) (string, error) {
 		return "", fmt.Errorf("failed to send message: %w", err)
 	}
 
+	if stream == nil {
+		return "", fmt.Errorf("received nil stream from handler")
+	}
+
 	// Collect response
 	var responseText strings.Builder
 	var usage *llm.Usage
 
+	chunkCount := 0
 	for chunk := range stream {
+		chunkCount++
 		switch c := chunk.(type) {
 		case llm.ApiStreamTextChunk:
 			responseText.WriteString(c.Text)

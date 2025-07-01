@@ -133,7 +133,7 @@ func (cmd *PRDCommand) analyzePRD(ctx context.Context) error {
 	return nil
 }
 
-// updatePRD reads existing AGENT.md, analyzes current project, and updates documentation
+// updatePRD reads existing AGENTS.md, analyzes current project, and updates documentation
 func (cmd *PRDCommand) updatePRD(ctx context.Context) error {
 	// Start animated spinner
 	done := make(chan bool)
@@ -219,7 +219,7 @@ func (cmd *PRDCommand) showHelp() error {
 	fmt.Println()
 	fmt.Println("FILES CREATED:")
 	fmt.Println("  project-overview.md      # Comprehensive project documentation")
-	fmt.Println("  AGENT.md                 # Concise context for AI (auto-included)")
+	fmt.Println("  AGENTS.md                 # Concise context for AI (auto-included)")
 	fmt.Println()
 	fmt.Println("The PRD system helps create structured project documentation that")
 	fmt.Println("provides context for all AI interactions in CodeForge.")

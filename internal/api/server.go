@@ -10,6 +10,7 @@ import (
 
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
 	"github.com/entrepeneur4lyf/codeforge/internal/config"
+	"github.com/entrepeneur4lyf/codeforge/internal/utils"
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -183,6 +184,7 @@ type Server struct {
 	chatStorage       *ChatStorage
 	app               *app.App // Integrated CodeForge application
 	connectionManager *ConnectionManager
+	gitignoreFilter   *utils.GitIgnoreFilter
 }
 
 // NewServer creates a new API server
@@ -210,6 +212,7 @@ func NewServerWithApp(cfg *config.Config, codeforgeApp *app.App) *Server {
 		chatStorage:       NewChatStorage(),
 		app:               codeforgeApp,
 		connectionManager: NewConnectionManager(),
+		gitignoreFilter:   utils.NewGitIgnoreFilter(cfg.WorkingDir),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// Only allow localhost connections for security

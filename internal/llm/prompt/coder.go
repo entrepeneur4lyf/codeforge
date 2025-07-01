@@ -32,7 +32,7 @@ func getPRDWorkflowSection() string {
 
 For new projects without existing documentation, you should guide users through creating a comprehensive Project Requirements Document (PRD):
 
-1. **Check for Existing PRD**: Look for project-overview.md, AGENT.md, or README.md with project information
+1. **Check for Existing PRD**: Look for project-overview.md, AGENTS.md, or README.md with project information
 2. **If No PRD Exists**: Ask user if they have a project overview document
 3. **If No Document**: "Ok, we can put together what we need to create a successful project if I can ask you a few questions."
 
@@ -54,12 +54,12 @@ Ask these questions to build a complete project understanding:
 2. **Tech Stack Analysis**: If no preference given, analyze requirements and suggest optimal stack
 3. **User Review**: Present overview and ask "What do you think of this overview? Do you have any changes?"
 4. **Iterate**: Refine based on feedback until approved
-5. **Save Files**: Create project-overview.md and AGENT.md with project summary
+5. **Save Files**: Create project-overview.md and AGENTS.md with project summary
 6. **Context Integration**: Project summary automatically included in all future context
 
 ### **Context Usage**
 
-The project overview from AGENT.md is automatically included in every context reassembly, providing:
+The project overview from AGENTS.md is automatically included in every context reassembly, providing:
 - Strategic project direction and goals
 - Technical constraints and requirements
 - User personas and use cases
@@ -76,7 +76,7 @@ For projects with existing codebases, analyze the project structure instead of a
 3. **Discover Frameworks**: Identify React, Express, Django, Rails, etc.
 4. **Analyze Architecture**: Understand folder structure and patterns
 5. **Generate Overview**: Create project-overview.md based on analysis
-6. **Create AGENT.md**: Generate project summary for context system
+6. **Create AGENTS.md**: Generate project summary for context system
 
 ### **Codebase Analysis Approach**
 

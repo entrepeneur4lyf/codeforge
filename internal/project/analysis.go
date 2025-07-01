@@ -17,24 +17,22 @@ func (s *Service) AnalyzeExistingProject() (*ProjectOverview, error) {
 		projectName = filepath.Base(s.workingDir)
 	}
 
-	// Create a basic overview without complex analysis
+	// Perform detailed project analysis using direct file access to avoid permission hangs
+	projectType := s.detectProjectTypeDirect()
+	techStack := s.detectTechStackDirect()
+	authConfig := s.detectAuthConfigDirect()
+	description := s.generateAnalysisDescription(projectType, techStack)
+
+	// Create comprehensive overview using detected information
 	overview := &ProjectOverview{
-		ProjectName: projectName,
-		Description: fmt.Sprintf("A software project named %s. Generated from automatic codebase analysis.", projectName),
-		AppType:     "software project",
-		TechStack: TechStack{
-			Backend:    "detected",
-			Framework:  "",
-			Frontend:   "",
-			Database:   "",
-			Deployment: "",
-			Suggested:  false,
-			Reasoning:  "Basic automatic analysis",
-		},
+		ProjectName:     projectName,
+		Description:     description,
+		AppType:         projectType,
+		TechStack:       techStack,
 		TargetUsers:     []string{},
 		SimilarApps:     []string{},
 		DesignExamples:  []string{},
-		Authentication:  AuthConfig{Required: false},
+		Authentication:  authConfig,
 		Billing:         BillingConfig{Required: false},
 		AdditionalNotes: "Generated from automatic codebase analysis",
 		CreatedAt:       time.Now(),
@@ -46,128 +44,6 @@ func (s *Service) AnalyzeExistingProject() (*ProjectOverview, error) {
 	}
 
 	return overview, nil
-}
-
-// detectProjectType analyzes the codebase to determine project type
-func (s *Service) detectProjectType() string {
-	// Check for web application indicators
-	if s.hasFile("package.json") {
-		if packageContent, err := s.readFile("package.json"); err == nil {
-			if s.containsWebFramework(packageContent) {
-				return "web application"
-			}
-			if s.containsNodeAPI(packageContent) {
-				return "API service"
-			}
-		}
-	}
-
-	// Check for mobile app indicators
-	if s.hasFile("pubspec.yaml") || s.hasFile("flutter.yaml") {
-		return "mobile application (Flutter)"
-	}
-
-	if s.hasFile("ios/") && s.hasFile("android/") {
-		return "mobile application (React Native)"
-	}
-
-	// Check for desktop app indicators
-	if s.hasFile("tauri.conf.json") || s.hasFile("src-tauri/") {
-		return "desktop application (Tauri)"
-	}
-
-	if s.hasFile("electron.js") || s.hasFile("main.js") {
-		if packageContent, err := s.readFile("package.json"); err == nil {
-			if strings.Contains(packageContent, "electron") {
-				return "desktop application (Electron)"
-			}
-		}
-	}
-
-	// Check for CLI tool indicators
-	if s.hasFile("go.mod") {
-		if s.hasFile("cmd/") || s.hasFile("main.go") {
-			return "CLI tool"
-		}
-	}
-
-	if s.hasFile("Cargo.toml") {
-		if cargoContent, err := s.readFile("Cargo.toml"); err == nil {
-			if strings.Contains(cargoContent, `[[bin]]`) {
-				return "CLI tool"
-			}
-		}
-	}
-
-	// Check for API service indicators
-	if s.hasFile("requirements.txt") || s.hasFile("pyproject.toml") {
-		if s.hasFile("app.py") || s.hasFile("main.py") || s.hasFile("api/") {
-			return "API service"
-		}
-	}
-
-	// Default fallback
-	return "application"
-}
-
-// detectTechStack analyzes the codebase to determine technology stack
-func (s *Service) detectTechStack() TechStack {
-	stack := TechStack{
-		Suggested: false,
-		Reasoning: "Detected from existing codebase analysis",
-	}
-
-	// Detect frontend technologies
-	if s.hasFile("package.json") {
-		if packageContent, err := s.readFile("package.json"); err == nil {
-			stack.Frontend = s.detectFrontendFromPackage(packageContent)
-			stack.Framework = s.detectFrameworkFromPackage(packageContent)
-		}
-	}
-
-	// Detect backend technologies
-	if s.hasFile("go.mod") {
-		stack.Backend = "go"
-		if goModContent, err := s.readFile("go.mod"); err == nil {
-			if strings.Contains(goModContent, "gin-gonic") {
-				stack.Framework = "gin"
-			} else if strings.Contains(goModContent, "echo") {
-				stack.Framework = "echo"
-			} else if strings.Contains(goModContent, "fiber") {
-				stack.Framework = "fiber"
-			}
-		}
-	} else if s.hasFile("requirements.txt") || s.hasFile("pyproject.toml") {
-		stack.Backend = "python"
-		if reqContent, err := s.readFile("requirements.txt"); err == nil {
-			if strings.Contains(reqContent, "django") {
-				stack.Framework = "django"
-			} else if strings.Contains(reqContent, "flask") {
-				stack.Framework = "flask"
-			} else if strings.Contains(reqContent, "fastapi") {
-				stack.Framework = "fastapi"
-			}
-		}
-	} else if s.hasFile("Cargo.toml") {
-		stack.Backend = "rust"
-		if cargoContent, err := s.readFile("Cargo.toml"); err == nil {
-			if strings.Contains(cargoContent, "axum") {
-				stack.Framework = "axum"
-			} else if strings.Contains(cargoContent, "warp") {
-				stack.Framework = "warp"
-			} else if strings.Contains(cargoContent, "actix-web") {
-				stack.Framework = "actix-web"
-			}
-		}
-	}
-
-	// Detect database
-	stack.Database = s.detectDatabase()
-
-	// Detect deployment
-	stack.Deployment = s.detectDeployment()
-
-	return stack
 }
 
 // detectFrontendFromPackage detects frontend technology from package.json
@@ -223,11 +99,150 @@ func (s *Service) detectFrameworkFromPackage(packageContent string) string {
 	return ""
 }
 
-// detectDatabase detects database technology
-func (s *Service) detectDatabase() string {
+// hasFile checks if a file or directory exists
+func (s *Service) hasFile(path string) bool {
+	fullPath := filepath.Join(s.workingDir, path)
+	_, err := os.Stat(fullPath)
+	return err == nil
+}
+
+// readFileDirect reads content from a file directly without permission system
+func (s *Service) readFileDirect(path string) (string, error) {
+	fullPath := filepath.Join(s.workingDir, path)
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+// detectProjectTypeDirect analyzes the codebase to determine project type using direct file access
+func (s *Service) detectProjectTypeDirect() string {
+	// Check for web application indicators
+	if s.hasFile("package.json") {
+		if packageContent, err := s.readFileDirect("package.json"); err == nil {
+			if s.containsWebFramework(packageContent) {
+				return "web application"
+			}
+			if s.containsNodeAPI(packageContent) {
+				return "API service"
+			}
+		}
+	}
+
+	// Check for mobile app indicators
+	if s.hasFile("pubspec.yaml") || s.hasFile("flutter.yaml") {
+		return "mobile application (Flutter)"
+	}
+
+	if s.hasFile("ios/") && s.hasFile("android/") {
+		return "mobile application (React Native)"
+	}
+
+	// Check for desktop app indicators
+	if s.hasFile("tauri.conf.json") || s.hasFile("src-tauri/") {
+		return "desktop application (Tauri)"
+	}
+
+	if s.hasFile("electron.js") || s.hasFile("main.js") {
+		if packageContent, err := s.readFileDirect("package.json"); err == nil {
+			if strings.Contains(packageContent, "electron") {
+				return "desktop application (Electron)"
+			}
+		}
+	}
+
+	// Check for CLI tool indicators
+	if s.hasFile("go.mod") {
+		if s.hasFile("cmd/") || s.hasFile("main.go") {
+			return "CLI tool"
+		}
+	}
+
+	if s.hasFile("Cargo.toml") {
+		if cargoContent, err := s.readFileDirect("Cargo.toml"); err == nil {
+			if strings.Contains(cargoContent, `[[bin]]`) {
+				return "CLI tool"
+			}
+		}
+	}
+
+	// Check for API service indicators
+	if s.hasFile("requirements.txt") || s.hasFile("pyproject.toml") {
+		if s.hasFile("app.py") || s.hasFile("main.py") || s.hasFile("api/") {
+			return "API service"
+		}
+	}
+
+	// Default fallback
+	return "application"
+}
+
+// detectTechStackDirect analyzes the codebase to determine technology stack using direct file access
+func (s *Service) detectTechStackDirect() TechStack {
+	stack := TechStack{
+		Suggested: false,
+		Reasoning: "Detected from existing codebase analysis",
+	}
+
+	// Detect frontend technologies
+	if s.hasFile("package.json") {
+		if packageContent, err := s.readFileDirect("package.json"); err == nil {
+			stack.Frontend = s.detectFrontendFromPackage(packageContent)
+			stack.Framework = s.detectFrameworkFromPackage(packageContent)
+		}
+	}
+
+	// Detect backend technologies
+	if s.hasFile("go.mod") {
+		stack.Backend = "go"
+		if goModContent, err := s.readFileDirect("go.mod"); err == nil {
+			if strings.Contains(goModContent, "gin-gonic") {
+				stack.Framework = "gin"
+			} else if strings.Contains(goModContent, "echo") {
+				stack.Framework = "echo"
+			} else if strings.Contains(goModContent, "fiber") {
+				stack.Framework = "fiber"
+			}
+		}
+	} else if s.hasFile("requirements.txt") || s.hasFile("pyproject.toml") {
+		stack.Backend = "python"
+		if reqContent, err := s.readFileDirect("requirements.txt"); err == nil {
+			if strings.Contains(reqContent, "django") {
+				stack.Framework = "django"
+			} else if strings.Contains(reqContent, "flask") {
+				stack.Framework = "flask"
+			} else if strings.Contains(reqContent, "fastapi") {
+				stack.Framework = "fastapi"
+			}
+		}
+	} else if s.hasFile("Cargo.toml") {
+		stack.Backend = "rust"
+		if cargoContent, err := s.readFileDirect("Cargo.toml"); err == nil {
+			if strings.Contains(cargoContent, "axum") {
+				stack.Framework = "axum"
+			} else if strings.Contains(cargoContent, "warp") {
+				stack.Framework = "warp"
+			} else if strings.Contains(cargoContent, "actix-web") {
+				stack.Framework = "actix-web"
+			}
+		}
+	}
+
+	// Detect database
+	stack.Database = s.detectDatabaseDirect()
+
+	// Detect deployment
+	stack.Deployment = s.detectDeploymentDirect()
+
+	return stack
+}
+
+// detectDatabaseDirect detects database technology using direct file access
+func (s *Service) detectDatabaseDirect() string {
 	// Check for database config files
 	if s.hasFile("prisma/schema.prisma") {
-		if schemaContent, err := s.readFile("prisma/schema.prisma"); err == nil {
+		if schemaContent, err := s.readFileDirect("prisma/schema.prisma"); err == nil {
 			if strings.Contains(schemaContent, "postgresql") {
 				return "postgres"
 			}
@@ -240,58 +255,76 @@ func (s *Service) detectDatabase() string {
 		}
 	}
 
-	// Check for database connection strings in common config files
-	configFiles := []string{".env", ".env.local", "config.json", "database.yml"}
-	for _, file := range configFiles {
-		if content, err := s.readFile(file); err == nil {
-			if strings.Contains(content, "postgres") || strings.Contains(content, "postgresql") {
+	// Check for Docker Compose database services
+	if s.hasFile("docker-compose.yml") || s.hasFile("docker-compose.yaml") {
+		if dockerContent, err := s.readFileDirect("docker-compose.yml"); err == nil {
+			if strings.Contains(dockerContent, "postgres") {
 				return "postgres"
 			}
-			if strings.Contains(content, "mysql") {
+			if strings.Contains(dockerContent, "mysql") {
 				return "mysql"
 			}
-			if strings.Contains(content, "mongodb") || strings.Contains(content, "mongo") {
+			if strings.Contains(dockerContent, "mongodb") {
 				return "mongodb"
 			}
-			if strings.Contains(content, "redis") {
+			if strings.Contains(dockerContent, "redis") {
 				return "redis"
 			}
 		}
 	}
 
+	// Check for database-specific files
+	if s.hasFile("database.sqlite") || s.hasFile("db.sqlite3") {
+		return "sqlite"
+	}
+
 	return ""
 }
 
-// detectDeployment detects deployment configuration
-func (s *Service) detectDeployment() string {
+// detectDeploymentDirect detects deployment configuration using direct file access
+func (s *Service) detectDeploymentDirect() string {
+	// Check for containerization
 	if s.hasFile("Dockerfile") {
 		return "docker"
 	}
+
+	if s.hasFile("docker-compose.yml") || s.hasFile("docker-compose.yaml") {
+		return "docker-compose"
+	}
+
+	// Check for cloud deployment configs
 	if s.hasFile("vercel.json") || s.hasFile(".vercel/") {
 		return "vercel"
 	}
-	if s.hasFile("netlify.toml") || s.hasFile(".netlify/") {
+
+	if s.hasFile("netlify.toml") || s.hasFile("_redirects") {
 		return "netlify"
 	}
+
 	if s.hasFile(".github/workflows/") {
-		return "github actions"
+		return "github-actions"
 	}
+
+	if s.hasFile("heroku.yml") || s.hasFile("Procfile") {
+		return "heroku"
+	}
+
 	if s.hasFile("railway.json") {
 		return "railway"
-	}
-	if s.hasFile("fly.toml") {
-		return "fly.io"
 	}
 
 	return ""
 }
 
-// detectAuthConfig detects authentication configuration
-func (s *Service) detectAuthConfig() AuthConfig {
-	// Check for auth providers in package.json or requirements
+// detectAuthConfigDirect detects authentication configuration using direct file access
+func (s *Service) detectAuthConfigDirect() AuthConfig {
+	// Check for Next.js auth
 	if s.hasFile("package.json") {
-		if packageContent, err := s.readFile("package.json"); err == nil {
-			if strings.Contains(packageContent, "auth0") {
+		if packageContent, err := s.readFileDirect("package.json"); err == nil {
+			if strings.Contains(packageContent, "next-auth") {
+				return AuthConfig{Required: true, Provider: "NextAuth.js"}
+			}
+			if strings.Contains(packageContent, "@auth0") {
 				return AuthConfig{Required: true, Provider: "Auth0"}
 			}
 			if strings.Contains(packageContent, "firebase") {
@@ -299,9 +332,6 @@ func (s *Service) detectAuthConfig() AuthConfig {
 			}
 			if strings.Contains(packageContent, "supabase") {
 				return AuthConfig{Required: true, Provider: "Supabase Auth"}
-			}
-			if strings.Contains(packageContent, "clerk") {
-				return AuthConfig{Required: true, Provider: "Clerk"}
 			}
 		}
 	}
@@ -315,13 +345,6 @@ func (s *Service) detectAuthConfig() AuthConfig {
 	}
 
 	return AuthConfig{Required: false}
-}
-
-// hasFile checks if a file or directory exists
-func (s *Service) hasFile(path string) bool {
-	fullPath := filepath.Join(s.workingDir, path)
-	_, err := os.Stat(fullPath)
-	return err == nil
 }
 
 // containsWebFramework checks if package.json contains web framework dependencies

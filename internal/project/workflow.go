@@ -64,7 +64,7 @@ func (w *PRDWorkflow) RunInteractivePRDCreation(ctx context.Context) (*ProjectOv
 	fmt.Println("PRD created successfully!")
 	fmt.Println("Files created:")
 	fmt.Println("  - project-overview.md (comprehensive documentation)")
-	fmt.Println("  - AGENT.md (concise context for AI)")
+	fmt.Println("  - AGENTS.md (concise context for AI)")
 	fmt.Println()
 
 	return overview, nil
@@ -125,7 +125,7 @@ func (w *PRDWorkflow) showPreviewAndGetApproval(overview *ProjectOverview) bool 
 	fmt.Println("📖 PRD Preview:")
 	fmt.Println("================")
 
-	// Show concise summary (what will go in AGENT.md)
+	// Show concise summary (what will go in AGENTS.md)
 	summary := w.service.GenerateProjectSummary(overview)
 	fmt.Println(summary)
 
@@ -213,12 +213,10 @@ func (w *PRDWorkflow) handleEdits(overview *ProjectOverview) bool {
 
 // QuickPRDFromExisting creates a PRD from existing project analysis
 func (w *PRDWorkflow) QuickPRDFromExisting(ctx context.Context) (*ProjectOverview, error) {
-	fmt.Fprintf(os.Stderr, "DEBUG: Starting AnalyzeExistingProject\n")
 	overview, err := w.service.AnalyzeExistingProject()
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze existing project: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: Analysis complete, starting CreatePRDFiles\n")
 
 	// Analysis complete (spinner handled by command level)
 	// Skip approval for automatic analysis - just save the files
@@ -227,19 +225,18 @@ func (w *PRDWorkflow) QuickPRDFromExisting(ctx context.Context) (*ProjectOvervie
 	if err := w.service.CreatePRDFiles(overview); err != nil {
 		return nil, fmt.Errorf("failed to save PRD files: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: CreatePRDFiles complete\n")
 
 	// Files created silently for automatic analysis
 
 	return overview, nil
 }
 
-// UpdateExistingPRD reads existing AGENT.md, analyzes current project, and updates documentation
+// UpdateExistingPRD reads existing AGENTS.md, analyzes current project, and updates documentation
 func (w *PRDWorkflow) UpdateExistingPRD(ctx context.Context) (*ProjectOverview, error) {
-	// Read existing AGENT.md content
-	existingContent, err := w.service.readFile("AGENT.md")
+	// Read existing AGENTS.md content
+	existingContent, err := w.service.readFile("AGENTS.md")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read existing AGENT.md: %w", err)
+		return nil, fmt.Errorf("failed to read existing AGENTS.md: %w", err)
 	}
 
 	// Analyze current project state
@@ -248,11 +245,11 @@ func (w *PRDWorkflow) UpdateExistingPRD(ctx context.Context) (*ProjectOverview, 
 		return nil, fmt.Errorf("failed to analyze current project: %w", err)
 	}
 
-	// Update AGENT.md with current analysis (incremental update)
+	// Update AGENTS.md with current analysis (incremental update)
 	updatedSummary := w.service.UpdateProjectSummary(overview, existingContent)
-	err = w.service.writeFile("AGENT.md", []byte(updatedSummary))
+	err = w.service.writeFile("AGENTS.md", []byte(updatedSummary))
 	if err != nil {
-		return nil, fmt.Errorf("failed to update AGENT.md: %w", err)
+		return nil, fmt.Errorf("failed to update AGENTS.md: %w", err)
 	}
 
 	// Create/update comprehensive project-overview.md
