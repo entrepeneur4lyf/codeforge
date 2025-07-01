@@ -164,9 +164,7 @@ func analyzeProjectDirectly(projectService *project.Service) {
 	done <- true
 	wg.Wait()
 
-	if overview != nil {
-		fmt.Printf("Project analysis complete! Generated: %s\n", overview.ProjectName)
-	}
+	// Analysis complete - no output needed
 }
 
 // updateProjectDirectly updates existing project documentation without CLI command infrastructure
@@ -214,9 +212,7 @@ func updateProjectDirectly(projectService *project.Service) {
 	done <- true
 	wg.Wait()
 
-	if overview != nil {
-		fmt.Printf("Project analysis complete! Updated: %s\n", overview.ProjectName)
-	}
+	// Analysis complete - no output needed
 }
 
 var rootCmd = &cobra.Command{
