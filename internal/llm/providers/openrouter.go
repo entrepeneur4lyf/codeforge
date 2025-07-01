@@ -635,7 +635,6 @@ func (h *OpenRouterHandler) refreshModelsInDatabase(ctx context.Context) ([]Open
 
 	// EFFICIENT APPROACH: Store lightweight model list only
 	// Metadata will be fetched on-demand when users actually need it
-	fmt.Printf("Processing %d models (lightweight sync)\n", len(response.Data))
 
 	// Sort models by release date DESC (newest first) - using basic data
 	sort.Slice(response.Data, func(i, j int) bool {
@@ -762,8 +761,6 @@ func (h *OpenRouterHandler) syncModelList(ctx context.Context, models []OpenRout
 	if err := h.ensureTablesExist(ctx); err != nil {
 		return fmt.Errorf("failed to ensure tables exist: %w", err)
 	}
-
-	fmt.Printf("Syncing %d models to database (lightweight)\n", len(models))
 
 	// 1. Get current model IDs from database
 	existingModels, err := h.getExistingModelIDs(ctx)
@@ -1000,7 +997,6 @@ func (h *OpenRouterHandler) updateLastSeen(ctx context.Context, currentModels ma
 		return fmt.Errorf("failed to update last_seen: %w", err)
 	}
 
-	fmt.Printf("Updated last_seen for %d models\n", len(currentModels))
 	return nil
 }
 
