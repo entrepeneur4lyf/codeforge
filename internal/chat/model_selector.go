@@ -8,10 +8,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm/providers"
+	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 )
 
 // ModelSelector handles interactive model selection
@@ -141,7 +143,7 @@ func (ms *ModelSelector) loadProviders() {
 		favorite := ms.favorites.IsProviderFavorite(name)
 
 		ms.providers = append(ms.providers, ProviderInfo{
-			Name:      strings.Title(name),
+			Name:      titleCase(name),
 			ID:        name,
 			Available: available,
 			Favorite:  favorite,
@@ -160,20 +162,99 @@ func (ms *ModelSelector) loadProviders() {
 	})
 }
 
-// loadOpenRouterFilters loads the available provider filters for OpenRouter
+// loadOpenRouterFilters loads the available provider filters for OpenRouter from database
 func (ms *ModelSelector) loadOpenRouterFilters() {
-	ms.openRouterFilters = []OpenRouterFilter{
-		{Name: "All Providers", ProviderKey: "", Description: "Show models from all providers"},
-		{Name: "Anthropic", ProviderKey: "anthropic", Description: "Claude models via OpenRouter"},
-		{Name: "OpenAI", ProviderKey: "openai", Description: "GPT models via OpenRouter"},
-		{Name: "💎 Google", ProviderKey: "google", Description: "Gemini models via OpenRouter"},
-		{Name: "🦙 Meta/Llama", ProviderKey: "meta-llama", Description: "Llama models via OpenRouter"},
-		{Name: "🌊 Mistral", ProviderKey: "mistralai", Description: "Mistral models via OpenRouter"},
-		{Name: "🧠 DeepSeek", ProviderKey: "deepseek", Description: "DeepSeek models via OpenRouter"},
-		{Name: "⚡ xAI", ProviderKey: "x-ai", Description: "Grok models via OpenRouter"},
-		{Name: "🔮 Cohere", ProviderKey: "cohere", Description: "Command models via OpenRouter"},
-		{Name: "Others", ProviderKey: "others", Description: "Other providers via OpenRouter"},
+	// Load filters dynamically from database
+	filters, err := ms.loadOpenRouterFiltersFromDB()
+	if err != nil {
+		// Fallback to basic filters if database fails
+		ms.openRouterFilters = []OpenRouterFilter{
+			{Name: "All Providers", ProviderKey: "", Description: "Show models from all providers"},
+		}
+		return
 	}
+
+	ms.openRouterFilters = filters
+}
+
+// loadOpenRouterFiltersFromDB loads provider filters from database with actual provider counts
+func (ms *ModelSelector) loadOpenRouterFiltersFromDB() ([]OpenRouterFilter, error) {
+	// Get database instance
+	vdb := vectordb.GetInstance()
+	if vdb == nil {
+		return nil, fmt.Errorf("vector database not initialized")
+	}
+
+	// Query distinct providers with counts from database
+	query := `
+		SELECT provider, COUNT(*) as count
+		FROM openrouter_models
+		WHERE last_seen > datetime('now', '-24 hours')
+		AND provider IS NOT NULL
+		AND provider != ''
+		GROUP BY provider
+		ORDER BY count DESC
+	`
+
+	ctx := context.Background()
+	rows, err := vdb.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query providers: %w", err)
+	}
+	defer rows.Close()
+
+	// Start with "All Providers" filter
+	filters := []OpenRouterFilter{
+		{Name: "All Providers", ProviderKey: "", Description: "Show models from all providers"},
+	}
+
+	// Add provider-specific filters
+	for rows.Next() {
+		var provider string
+		var count int
+		if err := rows.Scan(&provider, &count); err != nil {
+			continue
+		}
+
+		// Transform provider name to display name
+		displayName := ms.getProviderDisplayName(strings.ToLower(provider))
+		description := fmt.Sprintf("%s models via OpenRouter (%d models)", displayName, count)
+
+		filters = append(filters, OpenRouterFilter{
+			Name:        displayName,
+			ProviderKey: strings.ToLower(provider),
+			Description: description,
+		})
+	}
+
+	return filters, nil
+}
+
+// getProviderDisplayName converts database provider name to display name
+func (ms *ModelSelector) getProviderDisplayName(provider string) string {
+	displayNames := map[string]string{
+		"anthropic":  "Anthropic",
+		"openai":     "OpenAI",
+		"google":     "Google",
+		"meta":       "Meta/Llama",
+		"mistral ai": "Mistral AI",
+		"deepseek":   "DeepSeek",
+		"x ai":       "xAI",
+		"qwen":       "Qwen",
+		"cohere":     "Cohere",
+		"nvidia":     "NVIDIA",
+		"microsoft":  "Microsoft",
+	}
+
+	if display, exists := displayNames[provider]; exists {
+		return display
+	}
+
+	// Capitalize first letter for unknown providers
+	if len(provider) > 0 {
+		return strings.ToUpper(provider[:1]) + provider[1:]
+	}
+	return provider
 }
 
 // getProviderNameFromFilter converts filter key to provider name
@@ -196,8 +277,23 @@ func getProviderNameFromFilter(filter string) string {
 	case "cohere":
 		return "Cohere"
 	default:
-		return strings.Title(filter)
+		return titleCase(filter)
 	}
+}
+
+// titleCase converts a string to title case without using deprecated strings.Title
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	for i := 1; i < len(runes); i++ {
+		if runes[i-1] == ' ' || runes[i-1] == '-' || runes[i-1] == '_' {
+			runes[i] = unicode.ToUpper(runes[i])
+		}
+	}
+	return string(runes)
 }
 
 // isProviderAvailable checks if a provider has an API key
@@ -229,9 +325,14 @@ func (ms *ModelSelector) loadModels(providerID string) tea.Cmd {
 		var models []ModelInfo
 
 		// Load models based on provider
-		if providerID == "openrouter" {
+		switch providerID {
+		case "openrouter":
 			models = ms.loadOpenRouterModels()
-		} else {
+		case "anthropic":
+			models = ms.loadAnthropicModels(providerID)
+		case "openai":
+			models = ms.loadOpenAIModels(providerID)
+		default:
 			models = ms.loadDefaultModels(providerID)
 		}
 
@@ -255,50 +356,8 @@ func (ms *ModelSelector) addDefaultModels(providerID string) {
 		return
 	}
 	defaults := map[string][]ModelInfo{
-		"anthropic": {
-			{
-				Name: "Claude 3.5 Sonnet", ID: "claude-3-5-sonnet-20241022", Provider: providerID,
-				Description: "Most intelligent model for complex reasoning", ContextLength: 200000,
-				InputPrice: 3.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "reasoning"},
-			},
-			{
-				Name: "Claude 3.5 Haiku", ID: "claude-3-5-haiku-20241022", Provider: providerID,
-				Description: "Fastest model for simple tasks", ContextLength: 200000,
-				InputPrice: 0.25, OutputPrice: 1.25, Capabilities: []string{"text", "code", "speed"},
-			},
-			{
-				Name: "Claude 3 Opus", ID: "claude-3-opus-20240229", Provider: providerID,
-				Description: "Most powerful model for complex tasks", ContextLength: 200000,
-				InputPrice: 15.0, OutputPrice: 75.0, Capabilities: []string{"text", "code", "vision", "reasoning"},
-			},
-		},
-		"openai": {
-			{
-				Name: "GPT-4o (Latest)", ID: "gpt-4o-2024-08-06", Provider: providerID,
-				Description: "Multimodal flagship model", ContextLength: 128000,
-				InputPrice: 5.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "vision", "audio"},
-			},
-			{
-				Name: "GPT-4o Mini (Latest)", ID: "gpt-4o-mini-2024-07-18", Provider: providerID,
-				Description: "Affordable and intelligent small model", ContextLength: 128000,
-				InputPrice: 0.15, OutputPrice: 0.6, Capabilities: []string{"text", "code", "speed"},
-			},
-			{
-				Name: "o1 Preview", ID: "o1-preview-2024-09-12", Provider: providerID,
-				Description: "Advanced reasoning model", ContextLength: 128000,
-				InputPrice: 15.0, OutputPrice: 60.0, Capabilities: []string{"reasoning", "math", "code"},
-			},
-			{
-				Name: "o1 Mini", ID: "o1-mini-2024-09-12", Provider: providerID,
-				Description: "Smaller reasoning model", ContextLength: 128000,
-				InputPrice: 3.0, OutputPrice: 12.0, Capabilities: []string{"reasoning", "math", "speed"},
-			},
-			{
-				Name: "ChatGPT-4o Latest", ID: "chatgpt-4o-latest", Provider: providerID,
-				Description: "Latest ChatGPT model", ContextLength: 128000,
-				InputPrice: 5.0, OutputPrice: 15.0, Capabilities: []string{"text", "code", "chat"},
-			},
-		},
+		"anthropic": ms.loadAnthropicModels(providerID),
+		"openai":    ms.loadOpenAIModels(providerID),
 		"gemini": {
 			{Name: "Gemini 2.5 Pro (Latest)", ID: "gemini-2.5-pro", Provider: providerID},
 			{Name: "Gemini 2.5 Flash (Latest)", ID: "gemini-2.5-flash", Provider: providerID},
@@ -396,6 +455,7 @@ func (ms *ModelSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							ms.mode = SelectingOpenRouterFilter
 							ms.selectedProvider = provider.ID
 							ms.selectedIndex = 0
+							ms.loadOpenRouterFilters()
 						} else {
 							// Load models directly for other providers
 							ms.mode = SelectingModel
@@ -610,6 +670,11 @@ func (ms *ModelSelector) addOpenRouterModels() {
 		for i := 0; i < maxModels; i++ {
 			model := models[i]
 
+			// Filter out non-coding models
+			if !ms.isCodeGenerationModel(model.ID, []string{}) {
+				continue
+			}
+
 			// Extract capabilities from architecture
 			capabilities := []string{"text"}
 			if model.Architecture.Modality != "" {
@@ -680,8 +745,6 @@ func parsePrice(priceStr string) float64 {
 
 // loadOpenRouterModels loads OpenRouter models and returns them
 func (ms *ModelSelector) loadOpenRouterModels() []ModelInfo {
-	var models []ModelInfo
-
 	// Get OpenRouter API key
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	if apiKey == "" {
@@ -689,66 +752,82 @@ func (ms *ModelSelector) loadOpenRouterModels() []ModelInfo {
 		return ms.loadDefaultModels("openrouter")
 	}
 
-	// Fetch models from OpenRouter API in background
+	// Get models from database
 	ctx := context.Background()
-	providerModels, err := providers.GetOpenRouterModelsByProvider(ctx, apiKey)
-	if err != nil {
-		// Return fallback models on error
-		return ms.loadDefaultModels("openrouter")
-	}
 
-	// Convert OpenRouter models to ModelInfo, limiting to prevent UI issues
-	totalModelsAdded := 0
-	maxTotalModels := 50 // Limit total OpenRouter models to prevent UI spinning
-
-	for providerName, modelList := range providerModels {
-		if totalModelsAdded >= maxTotalModels {
-			break
+	// If a specific provider filter is selected, get models for that provider
+	if ms.selectedFilter != "" {
+		models, err := providers.GetOpenRouterModelsBySpecificProvider(ctx, apiKey, ms.selectedFilter)
+		if err != nil {
+			// Return fallback models on error
+			return ms.loadDefaultModels("openrouter")
 		}
 
-		// Take top 2 models from each provider (already sorted by date DESC)
-		maxModels := 2
-		if len(modelList) < maxModels {
-			maxModels = len(modelList)
-		}
+		// Convert OpenRouter models to ModelInfo
+		var modelInfos []ModelInfo
+		maxModels := 50 // Limit total models to prevent UI issues
 
-		// Don't exceed total limit
-		if totalModelsAdded+maxModels > maxTotalModels {
-			maxModels = maxTotalModels - totalModelsAdded
-		}
-
-		for i := 0; i < maxModels; i++ {
-			model := modelList[i]
-
-			// Extract capabilities from architecture
-			capabilities := []string{"text"}
-			if model.Architecture.Modality != "" {
-				if strings.Contains(model.Architecture.Modality, "image") {
-					capabilities = append(capabilities, "vision")
-				}
-				if strings.Contains(model.Architecture.Modality, "audio") {
-					capabilities = append(capabilities, "audio")
-				}
+		for i, model := range models {
+			if i >= maxModels {
+				break
 			}
 
-			// Use actual OpenRouter metadata
+			// Filter out non-coding models
+			if !ms.isCodeGenerationModel(model.ID, []string{}) {
+				continue
+			}
+
+			// Use basic model information from database
 			modelInfo := ModelInfo{
-				Name:          fmt.Sprintf("[%s] %s", providerName, model.Name),
+				Name:          model.Name,
 				ID:            model.ID,
 				Provider:      "openrouter",
 				Favorite:      ms.favorites.IsModelFavorite(model.ID),
 				Description:   model.Description,
 				ContextLength: model.ContextLength,
-				InputPrice:    parsePrice(model.Pricing.Prompt),
-				OutputPrice:   parsePrice(model.Pricing.Completion),
-				Capabilities:  capabilities,
+				Capabilities:  []string{"text"}, // Default capability
 			}
-			models = append(models, modelInfo)
-			totalModelsAdded++
+			modelInfos = append(modelInfos, modelInfo)
 		}
+
+		return modelInfos
 	}
 
-	return models
+	// If no filter selected, get all models
+	allModels, err := providers.GetOpenRouterModels(ctx, apiKey)
+	if err != nil {
+		// Return fallback models on error
+		return ms.loadDefaultModels("openrouter")
+	}
+
+	// Convert OpenRouter models to ModelInfo
+	var modelInfos []ModelInfo
+	maxModels := 50 // Limit total models to prevent UI issues
+
+	for i, model := range allModels {
+		if i >= maxModels {
+			break
+		}
+
+		// Filter out non-coding models
+		if !ms.isCodeGenerationModel(model.ID, []string{}) {
+			continue
+		}
+
+		// Use basic model information from database
+		modelInfo := ModelInfo{
+			Name:          model.Name,
+			ID:            model.ID,
+			Provider:      "openrouter",
+			Favorite:      ms.favorites.IsModelFavorite(model.ID),
+			Description:   model.Description,
+			ContextLength: model.ContextLength,
+			Capabilities:  []string{"text"}, // Default capability
+		}
+		modelInfos = append(modelInfos, modelInfo)
+	}
+
+	return modelInfos
 }
 
 // loadDefaultModels loads default models for a provider and returns them
@@ -800,9 +879,14 @@ func (ms *ModelSelector) loadOpenAIModels(providerID string) []ModelInfo {
 		return ms.getOpenAIFallbackModels(providerID)
 	}
 
-	// Convert OpenAI models to ModelInfo
+	// Convert OpenAI models to ModelInfo, filtering out non-coding models
 	var models []ModelInfo
 	for _, model := range openaiModels {
+		// Filter out audio, video, image, and other non-coding models
+		if !ms.isCodeGenerationModel(model.ID, []string{}) {
+			continue
+		}
+
 		modelInfo := ms.convertOpenAIModelToModelInfo(model, providerID)
 		models = append(models, modelInfo)
 	}
@@ -910,9 +994,14 @@ func (ms *ModelSelector) loadAnthropicModels(providerID string) []ModelInfo {
 		return ms.getAnthropicFallbackModels(providerID)
 	}
 
-	// Convert Anthropic models to ModelInfo
+	// Convert Anthropic models to ModelInfo, filtering out non-coding models
 	var models []ModelInfo
 	for _, model := range anthropicModels {
+		// Filter out non-coding models
+		if !ms.isCodeGenerationModel(model.ID, []string{}) {
+			continue
+		}
+
 		modelInfo := ms.convertAnthropicModelToModelInfo(model, providerID)
 		models = append(models, modelInfo)
 	}
@@ -939,12 +1028,6 @@ func (ms *ModelSelector) getAnthropicFallbackModels(providerID string) []ModelIn
 			Description: "Fastest model for simple tasks", ContextLength: 200000,
 			InputPrice: 0.8, OutputPrice: 4.0, Capabilities: []string{"text", "code", "speed"},
 			Favorite: ms.favorites.IsModelFavorite("claude-3-5-haiku-20241022"),
-		},
-		{
-			Name: "Claude 3 Opus", ID: "claude-3-opus-20240229", Provider: providerID,
-			Description: "Most powerful model for complex tasks", ContextLength: 200000,
-			InputPrice: 15.0, OutputPrice: 75.0, Capabilities: []string{"text", "code", "vision", "reasoning"},
-			Favorite: ms.favorites.IsModelFavorite("claude-3-opus-20240229"),
 		},
 	}
 }
@@ -981,9 +1064,14 @@ func (ms *ModelSelector) loadGeminiModels(providerID string) []ModelInfo {
 		return ms.getGeminiFallbackModels(providerID)
 	}
 
-	// Convert Gemini models to ModelInfo
+	// Convert Gemini models to ModelInfo, filtering out non-coding models
 	var models []ModelInfo
 	for _, model := range geminiModels {
+		// Filter out non-coding models
+		if !ms.isCodeGenerationModel(model.ID, []string{}) {
+			continue
+		}
+
 		modelInfo := ms.convertGeminiModelToModelInfo(model, providerID)
 		models = append(models, modelInfo)
 	}
@@ -1041,4 +1129,39 @@ func (ms *ModelSelector) convertGeminiModelToModelInfo(model providers.GeminiMod
 		Capabilities:  []string{"text", "code", "vision", "reasoning"},
 		Favorite:      ms.favorites.IsModelFavorite(model.ID),
 	}
+}
+
+// isCodeGenerationModel filters out non-coding models (audio, video, image, etc.)
+func (ms *ModelSelector) isCodeGenerationModel(modelName string, capabilities []string) bool {
+	modelLower := strings.ToLower(modelName)
+
+	// Exclude audio/video/image models
+	excludePatterns := []string{
+		"audio", "video", "realtime", "transcribe", "tts", "image", "vision",
+		"whisper", "dall-e", "tts-1", "embedding", "moderation",
+	}
+
+	for _, pattern := range excludePatterns {
+		if strings.Contains(modelLower, pattern) {
+			return false
+		}
+	}
+
+	// TEMPORARILY ALLOW ALL OTHER MODELS TO DEBUG
+	return true
+
+	// Include only text-based coding models
+	// includePatterns := []string{
+	// 	"gpt-4o", "gpt-4", "o1", "gpt-3.5", "claude", "gemini", "llama", "mistral",
+	// 	"deepseek", "qwen", "coder", "code", "instruct",
+	// }
+
+	// for _, pattern := range includePatterns {
+	// 	if strings.Contains(modelLower, pattern) {
+	// 		return true
+	// 	}
+	// }
+
+	// Default to false for unknown models
+	// return false
 }

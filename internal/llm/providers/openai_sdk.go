@@ -212,8 +212,9 @@ func getCachedOpenAIModels(ctx context.Context, apiKey string, forceRefresh bool
 
 	var models []OpenAIModelInfo
 	for _, model := range modelsList.Data {
-		// Filter for chat completion models only
-		if strings.Contains(model.ID, "gpt") || strings.Contains(model.ID, "o1") {
+		// Filter for chat completion models only - include all text models
+		if strings.Contains(model.ID, "gpt") || strings.Contains(model.ID, "o1") ||
+			strings.Contains(model.ID, "claude") || strings.Contains(model.ID, "text") {
 			models = append(models, OpenAIModelInfo{
 				ID:      model.ID,
 				Object:  string(model.Object),

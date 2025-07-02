@@ -21,6 +21,7 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
 	"github.com/entrepeneur4lyf/codeforge/internal/ml"
 	"github.com/entrepeneur4lyf/codeforge/internal/project"
+	"github.com/entrepeneur4lyf/codeforge/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -34,6 +35,7 @@ var (
 	model    string
 	provider string
 	format   string
+	tuiMode  bool
 	logFile  *os.File // For cleanup
 )
 
@@ -284,6 +286,15 @@ Features:
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		// Check if TUI mode is requested
+		if tuiMode {
+			if err := tui.Run(codeforgeApp); err != nil {
+				fmt.Printf("Error running TUI: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+		
 		// Handle different input modes like Gemini CLI
 		if len(args) > 0 {
 			// Direct prompt mode: codeforge "question"
@@ -315,6 +326,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&model, "model", "m", "", "Specify the model to use")
 	rootCmd.Flags().StringVarP(&provider, "provider", "p", "", "Specify the provider (anthropic, openai, openrouter, etc.)")
 	rootCmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, markdown)")
+	rootCmd.Flags().BoolVar(&tuiMode, "tui", false, "Start in TUI (Terminal User Interface) mode")
 
 }
 

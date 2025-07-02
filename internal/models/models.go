@@ -114,12 +114,36 @@ var OpenAIModels = map[ModelID]Model{
 
 // Anthropic Models
 const (
+	ClaudeOpus4    ModelID = "claude-opus-4"
+	ClaudeSonnet4  ModelID = "claude-sonnet-4"
 	Claude35Sonnet ModelID = "claude-3.5-sonnet"
 	Claude35Haiku  ModelID = "claude-3.5-haiku"
 	Claude3Haiku   ModelID = "claude-3-haiku"
 )
 
 var AnthropicModels = map[ModelID]Model{
+	ClaudeOpus4: {
+		ID:                  ClaudeOpus4,
+		Name:                "Claude Opus 4",
+		Provider:            ProviderAnthropic,
+		APIModel:            "claude-opus-4-20250514",
+		CostPer1MIn:         15.0,
+		CostPer1MOut:        75.0,
+		ContextWindow:       200000,
+		DefaultMaxTokens:    8192,
+		SupportsAttachments: true,
+	},
+	ClaudeSonnet4: {
+		ID:                  ClaudeSonnet4,
+		Name:                "Claude Sonnet 4",
+		Provider:            ProviderAnthropic,
+		APIModel:            "claude-sonnet-4-20250514",
+		CostPer1MIn:         3.0,
+		CostPer1MOut:        15.0,
+		ContextWindow:       200000,
+		DefaultMaxTokens:    8192,
+		SupportsAttachments: true,
+	},
 	Claude35Sonnet: {
 		ID:                  Claude35Sonnet,
 		Name:                "Claude 3.5 Sonnet",

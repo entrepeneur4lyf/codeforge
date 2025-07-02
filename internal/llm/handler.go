@@ -97,8 +97,10 @@ type ApiHandler interface {
 
 // ModelResponse represents a model ID and its information
 type ModelResponse struct {
-	ID   string    `json:"id"`
-	Info ModelInfo `json:"info"`
+	ID       string    `json:"id"`
+	Info     ModelInfo `json:"info"`
+	Provider string    `json:"provider,omitempty"`
+	Name     string    `json:"name,omitempty"`
 }
 
 // ApiHandlerOptions represents configuration options for API handlers
@@ -264,6 +266,122 @@ func GetDefaultModel() ModelResponse {
 
 // DefaultMaxTokens is a backward compatibility field
 const DefaultMaxTokens = 8192
+
+// GetAvailableModels returns all available models
+func GetAvailableModels() []ModelResponse {
+	// For now, return a hardcoded list of popular models
+	// In a full implementation, this would fetch from the model registry
+	return []ModelResponse{
+		// Anthropic models
+		{
+			ID:       "claude-3-5-sonnet-20241022",
+			Provider: "anthropic",
+			Name:     "Claude 3.5 Sonnet",
+			Info: ModelInfo{
+				MaxTokens:      4096,
+				ContextWindow:  200000,
+				SupportsImages: true,
+				InputPrice:     3.0,
+				OutputPrice:    15.0,
+				Description:    "Most intelligent Claude model",
+			},
+		},
+		{
+			ID:       "claude-3-5-haiku-20241022",
+			Provider: "anthropic",
+			Name:     "Claude 3.5 Haiku",
+			Info: ModelInfo{
+				MaxTokens:      4096,
+				ContextWindow:  200000,
+				SupportsImages: true,
+				InputPrice:     0.25,
+				OutputPrice:    1.25,
+				Description:    "Fast and efficient Claude model",
+			},
+		},
+		// OpenAI models
+		{
+			ID:       "gpt-4o",
+			Provider: "openai",
+			Name:     "GPT-4o",
+			Info: ModelInfo{
+				MaxTokens:      4096,
+				ContextWindow:  128000,
+				SupportsImages: true,
+				InputPrice:     5.0,
+				OutputPrice:    15.0,
+				Description:    "Latest GPT-4 Omni model",
+			},
+		},
+		{
+			ID:       "gpt-4o-mini",
+			Provider: "openai",
+			Name:     "GPT-4o Mini",
+			Info: ModelInfo{
+				MaxTokens:      4096,
+				ContextWindow:  128000,
+				SupportsImages: true,
+				InputPrice:     0.15,
+				OutputPrice:    0.6,
+				Description:    "Affordable GPT-4 model",
+			},
+		},
+		// Google models
+		{
+			ID:       "gemini-1.5-pro",
+			Provider: "gemini",
+			Name:     "Gemini 1.5 Pro",
+			Info: ModelInfo{
+				MaxTokens:      8192,
+				ContextWindow:  2000000,
+				SupportsImages: true,
+				InputPrice:     3.5,
+				OutputPrice:    10.5,
+				Description:    "Google's most capable model",
+			},
+		},
+		{
+			ID:       "gemini-1.5-flash",
+			Provider: "gemini",
+			Name:     "Gemini 1.5 Flash",
+			Info: ModelInfo{
+				MaxTokens:      8192,
+				ContextWindow:  1000000,
+				SupportsImages: true,
+				InputPrice:     0.075,
+				OutputPrice:    0.3,
+				Description:    "Fast Gemini model",
+			},
+		},
+		// OpenRouter models
+		{
+			ID:       "anthropic/claude-3.5-sonnet",
+			Provider: "openrouter",
+			Name:     "Claude 3.5 Sonnet (via OpenRouter)",
+			Info: ModelInfo{
+				MaxTokens:      4096,
+				ContextWindow:  200000,
+				SupportsImages: true,
+				InputPrice:     3.0,
+				OutputPrice:    15.0,
+				Description:    "Claude via OpenRouter",
+			},
+		},
+		{
+			ID:       "openai/gpt-4o",
+			Provider: "openrouter",
+			Name:     "GPT-4o (via OpenRouter)",
+			Info: ModelInfo{
+				MaxTokens:      4096,
+				ContextWindow:  128000,
+				SupportsImages: true,
+				InputPrice:     5.0,
+				OutputPrice:    15.0,
+				Description:    "GPT-4o via OpenRouter",
+			},
+		},
+	}
+}
 
 // GetCompletion provides a simple completion interface for backward compatibility
 func GetCompletion(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {

@@ -612,3 +612,36 @@ func NewAppWithConfig(ctx context.Context, configPath, workspaceRoot string, ena
 	}
 	return NewApp(ctx, appConfig)
 }
+
+// GetAvailableModels returns all available LLM models
+func (app *App) GetAvailableModels() []llm.ModelResponse {
+	return llm.GetAvailableModels()
+}
+
+// SetCurrentModel sets the current model for the app
+func (app *App) SetCurrentModel(provider, model string) error {
+	// Validate the model exists
+	available := llm.GetAvailableModels()
+	found := false
+	for _, m := range available {
+		if m.Provider == provider && m.Name == model {
+			found = true
+			break
+		}
+	}
+	
+	if !found {
+		return fmt.Errorf("model %s/%s not found", provider, model)
+	}
+	
+	// In a real implementation, we might store this preference
+	// For now, the model is specified per request
+	return nil
+}
+
+// GetCurrentModel returns the currently selected model
+func (app *App) GetCurrentModel() (provider, model string) {
+	// Return default model for now
+	defaultModel := llm.GetDefaultModel()
+	return defaultModel.Provider, defaultModel.Name
+}

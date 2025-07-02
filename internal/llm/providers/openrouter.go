@@ -574,6 +574,60 @@ func (h *OpenRouterHandler) getModelsFromDatabase(ctx context.Context) ([]OpenRo
 	return models, nil
 }
 
+// getModelsFromDatabaseByProvider retrieves models from database filtered by provider
+func (h *OpenRouterHandler) getModelsFromDatabaseByProvider(ctx context.Context, providerFilter string) ([]OpenRouterModel, error) {
+	if h.db == nil {
+		return nil, fmt.Errorf("no database connection available")
+	}
+
+	// Query from openrouter_models table with provider filter
+	var query string
+	var args []interface{}
+
+	if providerFilter == "" {
+		// No filter - get all models
+		query = `
+			SELECT model_id, name, description, context_length, created_date, last_seen
+			FROM openrouter_models
+			WHERE last_seen > datetime('now', '-24 hours')
+			ORDER BY name
+		`
+	} else {
+		// Filter by specific provider
+		query = `
+			SELECT model_id, name, description, context_length, created_date, last_seen
+			FROM openrouter_models
+			WHERE provider = ? AND last_seen > datetime('now', '-24 hours')
+			ORDER BY name
+		`
+		args = append(args, providerFilter)
+	}
+
+	rows, err := h.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query models from database: %w", err)
+	}
+	defer rows.Close()
+
+	var models []OpenRouterModel
+	for rows.Next() {
+		var model OpenRouterModel
+		var lastSeen string
+
+		err := rows.Scan(
+			&model.ID, &model.Name, &model.Description,
+			&model.ContextLength, &model.Created, &lastSeen,
+		)
+		if err != nil {
+			continue // Skip invalid rows
+		}
+
+		models = append(models, model)
+	}
+
+	return models, nil
+}
+
 // isDatabaseCacheValid checks if the database cache is still valid (24 hour TTL)
 func (h *OpenRouterHandler) isDatabaseCacheValid(ctx context.Context) bool {
 	if h.db == nil {
@@ -633,6 +687,15 @@ func (h *OpenRouterHandler) refreshModelsInDatabase(ctx context.Context) ([]Open
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	// Filter out non-coding models (audio, video, image, etc.)
+	var filteredModels []OpenRouterModel
+	for _, model := range response.Data {
+		if h.isCodeGenerationModel(model.ID) {
+			filteredModels = append(filteredModels, model)
+		}
+	}
+	response.Data = filteredModels
+
 	// EFFICIENT APPROACH: Store lightweight model list only
 	// Metadata will be fetched on-demand when users actually need it
 
@@ -651,6 +714,38 @@ func (h *OpenRouterHandler) refreshModelsInDatabase(ctx context.Context) ([]Open
 	modelsCache.setCachedModels(response.Data)
 
 	return response.Data, nil
+}
+
+// isCodeGenerationModel filters out non-coding models (audio, video, image, etc.)
+func (h *OpenRouterHandler) isCodeGenerationModel(modelName string) bool {
+	modelLower := strings.ToLower(modelName)
+
+	// Exclude audio/video/image models
+	excludePatterns := []string{
+		"audio", "video", "realtime", "transcribe", "tts", "image", "vision",
+		"whisper", "dall-e", "tts-1", "embedding", "moderation",
+	}
+
+	for _, pattern := range excludePatterns {
+		if strings.Contains(modelLower, pattern) {
+			return false
+		}
+	}
+
+	// Include text-based coding models
+	includePatterns := []string{
+		"gpt-4o", "gpt-4", "o1", "gpt-3.5", "claude", "gemini", "llama", "mistral",
+		"deepseek", "qwen", "coder", "code", "instruct", "chat", "text",
+	}
+
+	for _, pattern := range includePatterns {
+		if strings.Contains(modelLower, pattern) {
+			return true
+		}
+	}
+
+	// Default to false for unknown models
+	return false
 }
 
 // storeModelsInDatabase stores models using efficient two-table architecture
@@ -681,7 +776,7 @@ func (h *OpenRouterHandler) ensureTablesExist(ctx context.Context) error {
 
 	// Use VectorDB's ExecContext method
 
-	// Create models table
+	// Create models table with backward compatibility
 	modelsTable := `
 	CREATE TABLE IF NOT EXISTS openrouter_models (
 		model_id TEXT PRIMARY KEY,
@@ -696,6 +791,11 @@ func (h *OpenRouterHandler) ensureTablesExist(ctx context.Context) error {
 
 	if _, err := h.db.ExecContext(ctx, modelsTable); err != nil {
 		return fmt.Errorf("failed to create openrouter_models table: %w", err)
+	}
+
+	// Migrate existing schema: rename provider_name to provider
+	if err := h.migrateProviderColumn(ctx); err != nil {
+		return fmt.Errorf("failed to migrate provider column: %w", err)
 	}
 
 	// Create metadata table
@@ -737,7 +837,7 @@ func (h *OpenRouterHandler) ensureTablesExist(ctx context.Context) error {
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_openrouter_models_last_seen ON openrouter_models(last_seen)",
-		"CREATE INDEX IF NOT EXISTS idx_openrouter_models_provider ON openrouter_models(provider_name)",
+		"CREATE INDEX IF NOT EXISTS idx_openrouter_models_provider ON openrouter_models(provider)",
 		"CREATE INDEX IF NOT EXISTS idx_openrouter_metadata_updated ON openrouter_model_metadata(last_updated)",
 	}
 
@@ -938,7 +1038,7 @@ func (h *OpenRouterHandler) insertNewModels(ctx context.Context, models []OpenRo
 
 	stmt, err := h.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO openrouter_models
-		(model_id, name, description, created_date, context_length, provider_name, last_seen, added_date)
+		(model_id, name, description, created_date, context_length, provider, last_seen, added_date)
 		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`)
 
@@ -947,19 +1047,19 @@ func (h *OpenRouterHandler) insertNewModels(ctx context.Context, models []OpenRo
 	}
 
 	for _, model := range models {
-		providerName := extractProviderFromID(model.ID)
+		provider := normalizeProviderName(extractProviderFromID(model.ID))
 
 		_, err := h.db.ExecContext(ctx, `
 			INSERT OR IGNORE INTO openrouter_models
-			(model_id, name, description, created_date, context_length, provider_name, last_seen, added_date)
+			(model_id, name, description, created_date, context_length, provider, last_seen, added_date)
 			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-		`, model.ID, model.Name, model.Description, model.Created, model.ContextLength, providerName)
+		`, model.ID, model.Name, model.Description, model.Created, model.ContextLength, provider)
 
 		if err != nil {
 			return fmt.Errorf("failed to insert model %s: %w", model.ID, err)
 		}
 
-		fmt.Printf("  ➕ %s (%s)\n", model.Name, providerName)
+		fmt.Printf("  ➕ %s (%s)\n", model.Name, provider)
 	}
 
 	_ = stmt // Suppress unused variable warning
@@ -1387,7 +1487,7 @@ func (h *OpenRouterHandler) GetModelsByProvider(ctx context.Context) (map[string
 	providerModels := make(map[string][]OpenRouterModel)
 
 	for _, model := range allModels {
-		provider := extractProviderFromID(model.ID)
+		provider := normalizeProviderName(extractProviderFromID(model.ID))
 		providerModels[provider] = append(providerModels[provider], model)
 	}
 
@@ -1405,38 +1505,125 @@ func (h *OpenRouterHandler) GetModelsByProvider(ctx context.Context) (map[string
 func extractProviderFromID(modelID string) string {
 	parts := strings.Split(modelID, "/")
 	if len(parts) >= 2 {
-		provider := parts[0]
-		// Normalize provider names
-		switch provider {
-		case "anthropic":
-			return "Anthropic"
-		case "openai":
-			return "OpenAI"
-		case "google":
-			return "Google"
-		case "meta-llama":
-			return "Meta"
-		case "mistralai":
-			return "Mistral AI"
-		case "cohere":
-			return "Cohere"
-		case "01-ai":
-			return "01.AI"
-		case "qwen":
-			return "Qwen"
-		case "deepseek":
-			return "DeepSeek"
-		case "microsoft":
-			return "Microsoft"
-		default:
-			// Capitalize first letter
-			if len(provider) > 0 {
-				return strings.ToUpper(provider[:1]) + provider[1:]
-			}
-			return provider
+		return parts[0]
+	}
+	return "unknown"
+}
+
+// migrateProviderColumn migrates the provider_name column to provider
+func (h *OpenRouterHandler) migrateProviderColumn(ctx context.Context) error {
+	// Check if provider column already exists
+	checkQuery := `PRAGMA table_info(openrouter_models)`
+	rows, err := h.db.QueryContext(ctx, checkQuery)
+	if err != nil {
+		return fmt.Errorf("failed to check table schema: %w", err)
+	}
+	defer rows.Close()
+
+	hasProvider := false
+	hasProviderName := false
+
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull, pk int
+		var defaultValue interface{}
+
+		err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk)
+		if err != nil {
+			continue
+		}
+
+		if name == "provider" {
+			hasProvider = true
+		}
+		if name == "provider_name" {
+			hasProviderName = true
 		}
 	}
-	return "Other"
+
+	// If provider column exists, we're already migrated
+	if hasProvider {
+		return nil
+	}
+
+	// If provider_name doesn't exist either, this is a fresh install
+	if !hasProviderName {
+		// Add provider column to fresh table
+		addColumnQuery := `ALTER TABLE openrouter_models ADD COLUMN provider TEXT`
+		if _, err := h.db.ExecContext(ctx, addColumnQuery); err != nil {
+			return fmt.Errorf("failed to add provider column: %w", err)
+		}
+		return nil
+	}
+
+	// Migration needed: rename provider_name to provider
+	// SQLite doesn't support RENAME COLUMN directly, so we need to recreate the table
+	migrationQueries := []string{
+		// Create new table with correct schema
+		`CREATE TABLE openrouter_models_new (
+			model_id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			created_date INTEGER,
+			context_length INTEGER,
+			provider TEXT,
+			last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// Copy data from old table to new table
+		`INSERT INTO openrouter_models_new
+		 SELECT model_id, name, description, created_date, context_length,
+		        provider_name, last_seen, added_date
+		 FROM openrouter_models`,
+		// Drop old table
+		`DROP TABLE openrouter_models`,
+		// Rename new table
+		`ALTER TABLE openrouter_models_new RENAME TO openrouter_models`,
+	}
+
+	for _, query := range migrationQueries {
+		if _, err := h.db.ExecContext(ctx, query); err != nil {
+			return fmt.Errorf("failed to execute migration query '%s': %w", query, err)
+		}
+	}
+
+	return nil
+}
+
+// normalizeProviderName maps OpenRouter provider names to our standard naming convention
+func normalizeProviderName(openRouterProvider string) string {
+	switch strings.ToLower(openRouterProvider) {
+	case "anthropic":
+		return "anthropic"
+	case "openai":
+		return "openai"
+	case "google":
+		return "google"
+	case "meta-llama", "meta":
+		return "meta"
+	case "mistralai", "mistral":
+		return "mistral"
+	case "deepseek":
+		return "deepseek"
+	case "x-ai", "xai":
+		return "xai"
+	case "qwen":
+		return "qwen"
+	case "cohere":
+		return "cohere"
+	case "perplexity":
+		return "perplexity"
+	case "nvidia":
+		return "nvidia"
+	case "microsoft":
+		return "microsoft"
+	case "01-ai":
+		return "01ai"
+	default:
+		// For unknown providers, use the original name in lowercase
+		return strings.ToLower(openRouterProvider)
+	}
 }
 
 // GetTopOpenRouterModels fetches the top N models from OpenRouter (cached)
@@ -1544,6 +1731,22 @@ func getTopModelsFromScraping(ctx context.Context, limit int) ([]OpenRouterModel
 	return models, nil
 }
 
+// GetOpenRouterModels returns all OpenRouter models from database
+func GetOpenRouterModels(ctx context.Context, apiKey string) ([]OpenRouterModel, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("OpenRouter API key required")
+	}
+
+	options := llm.ApiHandlerOptions{
+		OpenRouterAPIKey: apiKey,
+	}
+
+	// Use database-enabled handler
+	db := vectordb.GetInstance()
+	handler := NewOpenRouterHandlerWithDB(options, db)
+	return handler.getModelsFromDatabase(ctx)
+}
+
 // GetOpenRouterModelsByProvider returns all OpenRouter models categorized by provider
 func GetOpenRouterModelsByProvider(ctx context.Context, apiKey string) (map[string][]OpenRouterModel, error) {
 	if apiKey == "" {
@@ -1558,6 +1761,22 @@ func GetOpenRouterModelsByProvider(ctx context.Context, apiKey string) (map[stri
 	db := vectordb.GetInstance()
 	handler := NewOpenRouterHandlerWithDB(options, db)
 	return handler.GetModelsByProvider(ctx)
+}
+
+// GetOpenRouterModelsBySpecificProvider returns models from a specific provider only
+func GetOpenRouterModelsBySpecificProvider(ctx context.Context, apiKey string, providerFilter string) ([]OpenRouterModel, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("OpenRouter API key required")
+	}
+
+	options := llm.ApiHandlerOptions{
+		OpenRouterAPIKey: apiKey,
+	}
+
+	// Use database-enabled handler
+	db := vectordb.GetInstance()
+	handler := NewOpenRouterHandlerWithDB(options, db)
+	return handler.getModelsFromDatabaseByProvider(ctx, providerFilter)
 }
 
 // GetOpenRouterCacheStatus returns cache information for debugging

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
@@ -215,14 +216,42 @@ func getCachedGeminiModels(ctx context.Context, apiKey string, forceRefresh bool
 		},
 	}
 
-	// Cache the results
+	// Filter out non-coding models
+	var filteredModels []GeminiModelInfo
+	for _, model := range models {
+		if isCodeGenerationModelGemini(model.ID) {
+			filteredModels = append(filteredModels, model)
+		}
+	}
+
+	// Cache the filtered results
 	if err := os.MkdirAll(cacheDir, 0755); err == nil {
-		if data, err := json.Marshal(models); err == nil {
+		if data, err := json.Marshal(filteredModels); err == nil {
 			os.WriteFile(cacheFile, data, 0644)
 		}
 	}
 
-	return models, nil
+	return filteredModels, nil
+}
+
+// isCodeGenerationModelGemini filters out non-coding models for Gemini
+func isCodeGenerationModelGemini(modelName string) bool {
+	modelLower := strings.ToLower(modelName)
+
+	// Exclude audio/video/image models
+	excludePatterns := []string{
+		"audio", "video", "realtime", "transcribe", "tts", "image", "vision",
+		"whisper", "dall-e", "tts-1", "embedding", "moderation",
+	}
+
+	for _, pattern := range excludePatterns {
+		if strings.Contains(modelLower, pattern) {
+			return false
+		}
+	}
+
+	// Gemini models are typically all text-based coding models
+	return true
 }
 
 // RefreshGeminiModelsAsync refreshes Gemini models in the background

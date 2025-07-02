@@ -133,6 +133,12 @@ func (h *AnthropicSDKHandler) getAnthropicModel(modelID string) anthropic.Model 
 
 	// Map to Anthropic model constants
 	switch modelID {
+	// Claude 4 models (May 2025)
+	case "claude-opus-4", "claude-opus-4-20250514":
+		return anthropic.ModelClaude3_5SonnetLatest // Use latest available until Claude 4 constants are added
+	case "claude-sonnet-4", "claude-sonnet-4-20250514":
+		return anthropic.ModelClaude3_5SonnetLatest // Use latest available until Claude 4 constants are added
+	// Claude 3.5 models
 	case "claude-3.5-sonnet", "claude-3-5-sonnet-20241022":
 		return anthropic.ModelClaude3_5Sonnet20241022
 	case "claude-3.5-sonnet-20240620":
@@ -143,6 +149,7 @@ func (h *AnthropicSDKHandler) getAnthropicModel(modelID string) anthropic.Model 
 		return anthropic.ModelClaude3_5Haiku20241022
 	case "claude-3.5-haiku-latest":
 		return anthropic.ModelClaude3_5HaikuLatest
+	// Claude 3 models
 	case "claude-3-opus", "claude-3-opus-20240229":
 		return anthropic.ModelClaude_3_Opus_20240229
 	case "claude-3-opus-latest":
@@ -151,6 +158,7 @@ func (h *AnthropicSDKHandler) getAnthropicModel(modelID string) anthropic.Model 
 		return anthropic.ModelClaude_3_Sonnet_20240229
 	case "claude-3-haiku", "claude-3-haiku-20240307":
 		return anthropic.ModelClaude_3_Haiku_20240307
+	// Legacy models
 	case "claude-2.1":
 		return anthropic.ModelClaude_2_1
 	case "claude-2.0":
@@ -227,7 +235,16 @@ func getCachedAnthropicModels(ctx context.Context, apiKey string, forceRefresh b
 	}
 
 	// Anthropic doesn't have a public models API, so we use hardcoded models
+	// Include latest Claude 4 models (released May 2025) and Claude 3.5 models
 	models := []AnthropicModelInfo{
+		{
+			ID: "claude-opus-4-20250514", DisplayName: "Claude Opus 4", Type: "text",
+			CreatedAt: "2025-05-14", MaxTokens: 8192, InputPrice: 15.0, OutputPrice: 75.0,
+		},
+		{
+			ID: "claude-sonnet-4-20250514", DisplayName: "Claude Sonnet 4", Type: "text",
+			CreatedAt: "2025-05-14", MaxTokens: 8192, InputPrice: 3.0, OutputPrice: 15.0,
+		},
 		{
 			ID: "claude-3-5-sonnet-20241022", DisplayName: "Claude 3.5 Sonnet", Type: "text",
 			CreatedAt: "2024-10-22", MaxTokens: 8192, InputPrice: 3.0, OutputPrice: 15.0,
@@ -235,18 +252,6 @@ func getCachedAnthropicModels(ctx context.Context, apiKey string, forceRefresh b
 		{
 			ID: "claude-3-5-haiku-20241022", DisplayName: "Claude 3.5 Haiku", Type: "text",
 			CreatedAt: "2024-10-22", MaxTokens: 8192, InputPrice: 0.8, OutputPrice: 4.0,
-		},
-		{
-			ID: "claude-3-opus-20240229", DisplayName: "Claude 3 Opus", Type: "text",
-			CreatedAt: "2024-02-29", MaxTokens: 4096, InputPrice: 15.0, OutputPrice: 75.0,
-		},
-		{
-			ID: "claude-3-sonnet-20240229", DisplayName: "Claude 3 Sonnet", Type: "text",
-			CreatedAt: "2024-02-29", MaxTokens: 4096, InputPrice: 3.0, OutputPrice: 15.0,
-		},
-		{
-			ID: "claude-3-haiku-20240307", DisplayName: "Claude 3 Haiku", Type: "text",
-			CreatedAt: "2024-03-07", MaxTokens: 4096, InputPrice: 0.25, OutputPrice: 1.25,
 		},
 	}
 
@@ -257,7 +262,35 @@ func getCachedAnthropicModels(ctx context.Context, apiKey string, forceRefresh b
 		}
 	}
 
-	return models, nil
+	// Filter out non-coding models (though Anthropic typically only has text models)
+	var filteredModels []AnthropicModelInfo
+	for _, model := range models {
+		if isCodeGenerationModelAnthropic(model.ID) {
+			filteredModels = append(filteredModels, model)
+		}
+	}
+
+	return filteredModels, nil
+}
+
+// isCodeGenerationModelAnthropic filters out non-coding models for Anthropic
+func isCodeGenerationModelAnthropic(modelName string) bool {
+	modelLower := strings.ToLower(modelName)
+
+	// Exclude audio/video/image models
+	excludePatterns := []string{
+		"audio", "video", "realtime", "transcribe", "tts", "image", "vision",
+		"whisper", "dall-e", "tts-1", "embedding", "moderation",
+	}
+
+	for _, pattern := range excludePatterns {
+		if strings.Contains(modelLower, pattern) {
+			return false
+		}
+	}
+
+	// Anthropic models are typically all text-based coding models
+	return true
 }
 
 // RefreshAnthropicModelsAsync refreshes Anthropic models in the background

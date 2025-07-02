@@ -254,6 +254,22 @@ func (ds *ModelDiscoveryService) discoverOpenAIModels(ctx context.Context) error
 func (ds *ModelDiscoveryService) discoverAnthropicModels(ctx context.Context) error {
 	knownModels := []ProviderModelInfo{
 		{
+			ID:          "claude-opus-4-20250514",
+			Name:        "Claude Opus 4",
+			MaxTokens:   200000,
+			InputPrice:  15.0,
+			OutputPrice: 75.0,
+			Available:   true,
+		},
+		{
+			ID:          "claude-sonnet-4-20250514",
+			Name:        "Claude Sonnet 4",
+			MaxTokens:   200000,
+			InputPrice:  3.0,
+			OutputPrice: 15.0,
+			Available:   true,
+		},
+		{
 			ID:          "claude-3-5-sonnet-20241022",
 			Name:        "Claude 3.5 Sonnet",
 			MaxTokens:   200000,
