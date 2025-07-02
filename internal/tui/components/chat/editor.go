@@ -79,7 +79,7 @@ func (m *EditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, editorKeys.Submit):
-			// Submit message
+			// Submit message with Enter
 			content := strings.TrimSpace(m.textarea.Value())
 			if content != "" {
 				// Clear editor
@@ -95,19 +95,24 @@ func (m *EditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+			return m, nil
 			
 		case key.Matches(msg, editorKeys.NewLine):
-			// Insert newline
+			// Insert newline with Shift+Enter
 			m.textarea.InsertString("\n")
+			m.textarea, cmd = m.textarea.Update(tea.KeyMsg{})
+			return m, cmd
 			
 		case key.Matches(msg, editorKeys.RemoveAttachment) && len(m.attachments) > 0:
 			// Remove last attachment
 			m.attachments = m.attachments[:len(m.attachments)-1]
 			
 		default:
-			// Pass to textarea
-			m.textarea, cmd = m.textarea.Update(msg)
-			cmds = append(cmds, cmd)
+			// Pass other keys to textarea but NOT Enter (we handle that above)
+			if msg.Type != tea.KeyEnter {
+				m.textarea, cmd = m.textarea.Update(msg)
+				cmds = append(cmds, cmd)
+			}
 		}
 		
 	case AttachmentAddedMsg:
@@ -159,7 +164,7 @@ func (m *EditorModel) View() string {
 		Width(m.width).
 		Align(lipgloss.Center)
 		
-	help := helpStyle.Render("Ctrl+Enter: Send • Enter: New Line • Ctrl+R: Remove Attachment")
+	help := helpStyle.Render("Enter: Send • Shift+Enter: New Line • Ctrl+R: Remove Attachment")
 	sections = append(sections, help)
 	
 	return strings.Join(sections, "\n")
@@ -247,12 +252,12 @@ type editorKeyMap struct {
 
 var editorKeys = editorKeyMap{
 	Submit: key.NewBinding(
-		key.WithKeys("ctrl+enter"),
-		key.WithHelp("ctrl+enter", "send message"),
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "send message"),
 	),
 	NewLine: key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "new line"),
+		key.WithKeys("shift+enter"),
+		key.WithHelp("shift+enter", "new line"),
 	),
 	RemoveAttachment: key.NewBinding(
 		key.WithKeys("ctrl+r"),

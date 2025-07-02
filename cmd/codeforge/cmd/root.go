@@ -281,13 +281,17 @@ Features:
 		ml.Initialize(codeforgeApp.Config) // Ignore errors - ML is for model context only
 
 		// Auto-analyze existing projects (new projects handled by model tool)
-		autoGenerateProjectOverview()
+		// Skip in TUI mode to avoid delays
+		if !tuiMode {
+			autoGenerateProjectOverview()
+		}
 
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		// Check if TUI mode is requested
 		if tuiMode {
+			fmt.Println("Starting TUI mode...")
 			if err := tui.Run(codeforgeApp); err != nil {
 				fmt.Printf("Error running TUI: %v\n", err)
 				os.Exit(1)

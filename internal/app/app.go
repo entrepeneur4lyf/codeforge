@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/chat"
@@ -13,6 +14,7 @@ import (
 	contextmgmt "github.com/entrepeneur4lyf/codeforge/internal/context"
 	"github.com/entrepeneur4lyf/codeforge/internal/events"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
+	"github.com/entrepeneur4lyf/codeforge/internal/llm/providers"
 	"github.com/entrepeneur4lyf/codeforge/internal/mcp"
 	"github.com/entrepeneur4lyf/codeforge/internal/notifications"
 	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
@@ -644,4 +646,64 @@ func (app *App) GetCurrentModel() (provider, model string) {
 	// Return default model for now
 	defaultModel := llm.GetDefaultModel()
 	return defaultModel.Provider, defaultModel.Name
+}
+
+// GetLLMHandler returns an LLM handler for the specified model
+func (app *App) GetLLMHandler(modelID string) llm.ApiHandler {
+	// Parse provider from model ID
+	provider := ""
+	if strings.Contains(modelID, "/") {
+		parts := strings.Split(modelID, "/")
+		if len(parts) >= 2 {
+			provider = parts[0]
+			modelID = strings.Join(parts[1:], "/")
+		}
+	} else {
+		// Detect provider from model ID
+		if strings.HasPrefix(modelID, "claude-") {
+			provider = "anthropic"
+		} else if strings.HasPrefix(modelID, "gpt-") || strings.HasPrefix(modelID, "o1-") {
+			provider = "openai"
+		} else if strings.HasPrefix(modelID, "gemini-") {
+			provider = "gemini"
+		}
+	}
+	
+	// Get API key for provider
+	apiKey := ""
+	switch provider {
+	case "anthropic":
+		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+	case "openai":
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	case "gemini":
+		apiKey = os.Getenv("GEMINI_API_KEY")
+	case "openrouter":
+		apiKey = os.Getenv("OPENROUTER_API_KEY")
+	default:
+		// Try to find any available key
+		if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
+			provider = "openrouter"
+			apiKey = key
+		}
+	}
+	
+	if apiKey == "" {
+		return nil
+	}
+	
+	// Create handler options
+	options := llm.ApiHandlerOptions{
+		APIKey:  apiKey,
+		ModelID: modelID,
+	}
+	
+	// Build the handler
+	handler, err := providers.BuildApiHandler(options)
+	if err != nil {
+		log.Printf("Failed to create LLM handler: %v", err)
+		return nil
+	}
+	
+	return handler
 }

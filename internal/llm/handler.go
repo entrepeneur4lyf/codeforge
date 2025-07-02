@@ -251,7 +251,9 @@ func Initialize(cfg interface{}) error {
 // GetDefaultModel returns a default model configuration
 func GetDefaultModel() ModelResponse {
 	return ModelResponse{
-		ID: "claude-3-5-sonnet-20241022",
+		ID:       "claude-3-5-sonnet-20241022",
+		Provider: "anthropic",
+		Name:     "claude-3-5-sonnet-20241022",
 		Info: ModelInfo{
 			MaxTokens:           8192,
 			ContextWindow:       200000,

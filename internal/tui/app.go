@@ -50,7 +50,8 @@ type Model struct {
 }
 
 func New(application *app.App) *Model {
-	theme := themes.NewDefaultTheme()
+	// Use simple theme for better terminal compatibility
+	theme := themes.NewSimpleTheme()
 	
 	return &Model{
 		app:    application,
@@ -323,7 +324,7 @@ var keys = keyMap{
 		key.WithHelp("ctrl+c/q", "quit"),
 	),
 	Help: key.NewBinding(
-		key.WithKeys("?", "ctrl+h"),
+		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
 	),
 	ModelSelect: key.NewBinding(

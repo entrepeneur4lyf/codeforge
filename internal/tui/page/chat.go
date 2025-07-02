@@ -3,6 +3,9 @@ package page
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -10,6 +13,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
+	contextmgmt "github.com/entrepeneur4lyf/codeforge/internal/context"
+	"github.com/entrepeneur4lyf/codeforge/internal/events"
+	"github.com/entrepeneur4lyf/codeforge/internal/llm"
+	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/chat"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/dialogs"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
@@ -39,6 +46,11 @@ type ChatPage struct {
 	// Processing state
 	isProcessing bool
 	lastError    error
+	
+	// Context tracking
+	currentContextTokens int
+	maxContextTokens     int
+	lastProcessedContext *contextmgmt.ProcessedContext
 }
 
 // NewChatPage creates a new chat page
@@ -49,6 +61,10 @@ func NewChatPage(app *app.App, theme themes.Theme) *ChatPage {
 	// Get current model
 	provider, model := app.GetCurrentModel()
 	currentModel := fmt.Sprintf("%s/%s", provider, model)
+	
+	// Get model info for context window
+	defaultModel := llm.GetDefaultModel()
+	maxContext := defaultModel.Info.ContextWindow
 	
 	return &ChatPage{
 		app:              app,
@@ -61,6 +77,8 @@ func NewChatPage(app *app.App, theme themes.Theme) *ChatPage {
 		focusIndex:       1, // Start with editor focused
 		currentSessionID: sessionID,
 		currentModel:     currentModel,
+		maxContextTokens: maxContext,
+		currentContextTokens: 0,
 	}
 }
 
@@ -239,6 +257,15 @@ func (p *ChatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update current model
 		p.currentModel = fmt.Sprintf("%s/%s", msg.Provider, msg.Model)
 		p.app.SetCurrentModel(msg.Provider, msg.Model)
+		
+		// Update context window for new model
+		availableModels := p.app.GetAvailableModels()
+		for _, model := range availableModels {
+			if model.Provider == msg.Provider && model.Name == msg.Model {
+				p.maxContextTokens = model.Info.ContextWindow
+				break
+			}
+		}
 	}
 	
 	// Update components
@@ -371,13 +398,13 @@ func (p *ChatPage) renderHeader() string {
 }
 
 func (p *ChatPage) renderStatusBar() string {
-	// Focus indicator
+	// Left side - Focus indicator
 	focusText := ""
 	switch p.focusIndex {
 	case 0:
-		focusText = "Chat"
+		focusText = "Chat View"
 	case 1:
-		focusText = "Editor"
+		focusText = "Message Input"
 	case 2:
 		focusText = "Sessions"
 	}
@@ -399,14 +426,46 @@ func (p *ChatPage) renderStatusBar() string {
 	helpStyle := p.theme.MutedText()
 	help := helpStyle.Render("Tab: Switch Focus • Ctrl+B: Toggle Sidebar • ?: Help")
 	
-	// Combine
-	statusBar := lipgloss.JoinHorizontal(
+	// Left side combined
+	leftSide := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		focus,
 		p.theme.Base().Width(2).Render(""),
 		status,
 		p.theme.Base().Width(2).Render(""),
 		help,
+	)
+	
+	// Right side - Model info and context usage
+	modelInfo := p.getModelInfo()
+	contextUsage := p.getContextUsage()
+	
+	modelStyle := p.theme.PrimaryText()
+	contextStyle := p.theme.SecondaryText()
+	
+	rightContent := fmt.Sprintf("%s • %s", 
+		modelStyle.Render(modelInfo),
+		contextStyle.Render(contextUsage))
+	
+	rightSide := p.theme.Base().
+		Width(lipgloss.Width(rightContent)).
+		Align(lipgloss.Right).
+		Render(rightContent)
+	
+	// Calculate spacing
+	leftWidth := lipgloss.Width(leftSide)
+	rightWidth := lipgloss.Width(rightSide)
+	spacerWidth := p.width - leftWidth - rightWidth - 2
+	if spacerWidth < 0 {
+		spacerWidth = 0
+	}
+	
+	// Combine with spacer
+	statusBar := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		leftSide,
+		p.theme.Base().Width(spacerWidth).Render(""),
+		rightSide,
 	)
 	
 	return p.theme.StatusBar().
@@ -444,56 +503,287 @@ func (p *ChatPage) updateFocus() tea.Cmd {
 	return nil
 }
 
+// debugLog writes debug information to a log file
+func (p *ChatPage) debugLog(format string, args ...interface{}) {
+	// Create log directory if it doesn't exist
+	debugDir := filepath.Join(p.app.WorkspaceRoot, "log")
+	if err := os.MkdirAll(debugDir, 0755); err != nil {
+		return
+	}
+	
+	// Open or create log file
+	logPath := filepath.Join(debugDir, "tui-debug.log")
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	
+	// Create logger
+	logger := log.New(file, "", log.LstdFlags)
+	logger.Printf(format, args...)
+}
+
 // processMessage sends the message to the LLM and streams the response
 func (p *ChatPage) processMessage(content string, attachments []string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
+		
+		// Debug log the start of processing
+		p.debugLog("=== NEW MESSAGE REQUEST ===")
+		p.debugLog("Session ID: %s", p.currentSessionID)
+		p.debugLog("Model: %s", p.currentModel)
+		p.debugLog("Original Content: %s", content)
+		p.debugLog("Attachments: %v", attachments)
 		
 		// Add file contents if attachments exist
 		fullContent := content
 		if len(attachments) > 0 {
 			fullContent += "\n\nAttached files:\n"
 			for _, path := range attachments {
-				// Read file content
-				// TODO: Use app's file operation manager
-				fullContent += fmt.Sprintf("\n--- %s ---\n", path)
-				// Add file content here
+				// Read file content using app's file operation manager
+				fileOps := p.app.GetFileOperationManager()
+				if fileOps != nil {
+					fileContent, err := fileOps.ReadFile(ctx, &permissions.FileOperationRequest{
+						SessionID: p.currentSessionID,
+						Operation: "read",
+						Path:      path,
+					})
+					if err != nil {
+						fullContent += fmt.Sprintf("\n--- %s ---\nError reading file: %v\n", path, err)
+					} else {
+						fullContent += fmt.Sprintf("\n--- %s ---\n%s\n", path, fileContent.Content)
+					}
+				} else {
+					// Fallback to direct file reading
+					data, err := os.ReadFile(path)
+					if err != nil {
+						fullContent += fmt.Sprintf("\n--- %s ---\nError reading file: %v\n", path, err)
+					} else {
+						fullContent += fmt.Sprintf("\n--- %s ---\n%s\n", path, string(data))
+					}
+				}
 			}
 		}
 		
-		// Process with app
-		response, err := p.app.ProcessChatMessage(ctx, p.currentSessionID, fullContent, p.currentModel)
-		if err != nil {
-			return streamCompleteMsg{error: err}
-		}
+		// Debug log the full content being sent
+		p.debugLog("Full Content to Model:\n%s", fullContent)
+		p.debugLog("Content Length: %d characters", len(fullContent))
 		
-		// For now, send complete response
-		// TODO: Implement proper streaming
-		return tea.Batch(
-			func() tea.Msg {
-				return chat.StreamUpdateMsg{
-					SessionID: p.currentSessionID,
-					Content:   response,
-					Done:      false,
+		// Create a channel for streaming responses
+		streamChan := make(chan string, 100)
+		errorChan := make(chan error, 1)
+		doneChan := make(chan bool, 1)
+		
+		// Start processing in background
+		go func() {
+			defer close(streamChan)
+			defer close(doneChan)
+			
+			// Use the app's streaming API if available
+			handler := p.app.GetLLMHandler(p.currentModel)
+			if handler == nil {
+				// Fallback to non-streaming
+				p.debugLog("Using non-streaming API (no handler available)")
+				response, err := p.app.ProcessChatMessage(ctx, p.currentSessionID, fullContent, p.currentModel)
+				if err != nil {
+					p.debugLog("Non-streaming API error: %v", err)
+					errorChan <- err
+					return
 				}
-			},
-			func() tea.Msg {
-				return chat.StreamUpdateMsg{
-					SessionID: p.currentSessionID,
-					Content:   "",
-					Done:      true,
+				p.debugLog("Non-streaming response received: %d characters", len(response))
+				streamChan <- response
+				doneChan <- true
+				return
+			}
+			
+			// Build messages for streaming
+			p.debugLog("Using streaming API with handler")
+			systemPrompt := "You are CodeForge, an AI coding assistant."
+			messages := []llm.Message{
+				{
+					Role: "user",
+					Content: []llm.ContentBlock{
+						llm.TextBlock{Text: fullContent},
+					},
+				},
+			}
+			
+			// Debug log the exact message structure
+			p.debugLog("System Prompt: %s", systemPrompt)
+			p.debugLog("Messages being sent:")
+			for i, msg := range messages {
+				p.debugLog("  Message %d - Role: %s", i, msg.Role)
+				for j, block := range msg.Content {
+					if textBlock, ok := block.(llm.TextBlock); ok {
+						p.debugLog("    Content Block %d (Text): %s", j, textBlock.Text)
+					}
 				}
-			},
-			func() tea.Msg {
-				return streamCompleteMsg{}
-			},
-		)
+			}
+			
+			// Create streaming request
+			stream, err := handler.CreateMessage(ctx, systemPrompt, messages)
+			if err != nil {
+				p.debugLog("Failed to create streaming request: %v", err)
+				errorChan <- err
+				return
+			}
+			
+			p.debugLog("Streaming started, reading chunks...")
+			totalChunks := 0
+			totalLength := 0
+			
+			// Stream the response
+			for chunk := range stream {
+				if textChunk, ok := chunk.(llm.ApiStreamTextChunk); ok {
+					if textChunk.Text != "" {
+						totalChunks++
+						totalLength += len(textChunk.Text)
+						streamChan <- textChunk.Text
+					}
+				}
+			}
+			
+			p.debugLog("Streaming completed - Total chunks: %d, Total characters: %d", totalChunks, totalLength)
+			p.debugLog("=== END MESSAGE REQUEST ===\n")
+			doneChan <- true
+		}()
+		
+		// Return command that processes stream updates
+		return func() tea.Msg {
+			for {
+				select {
+				case chunk, ok := <-streamChan:
+					if !ok {
+						return streamCompleteMsg{}
+					}
+					if chunk != "" {
+						// Send non-blocking update
+						go func(c string) {
+							p.app.EventManager.PublishSystem(events.SystemHealthCheck, events.SystemEventPayload{
+								Component: "tui_chat",
+								Status:    "streaming",
+								Message:   "Stream chunk received",
+								Metadata: map[string]interface{}{
+									"session_id": p.currentSessionID,
+									"chunk":      c,
+								},
+							})
+						}(chunk)
+						
+						return chat.StreamUpdateMsg{
+							SessionID: p.currentSessionID,
+							Content:   chunk,
+							Done:      false,
+						}
+					}
+					
+				case err := <-errorChan:
+					return streamCompleteMsg{error: err}
+					
+				case <-doneChan:
+					return tea.Batch(
+						func() tea.Msg {
+							return chat.StreamUpdateMsg{
+								SessionID: p.currentSessionID,
+								Content:   "",
+								Done:      true,
+							}
+						},
+						func() tea.Msg {
+							return streamCompleteMsg{}
+						},
+					)
+					
+				case <-time.After(100 * time.Millisecond):
+					// Continue checking
+				}
+			}
+		}
 	}
 }
 
 // Messages
 type streamCompleteMsg struct {
 	error error
+}
+
+// getModelInfo returns a formatted string with the current model
+func (p *ChatPage) getModelInfo() string {
+	// Extract just the model name from the full path
+	parts := strings.Split(p.currentModel, "/")
+	modelName := p.currentModel
+	if len(parts) > 1 {
+		modelName = parts[1]
+	}
+	
+	// Shorten long model names
+	if len(modelName) > 25 {
+		modelName = modelName[:22] + "..."
+	}
+	
+	return modelName
+}
+
+// getContextUsage returns a formatted string showing context usage
+func (p *ChatPage) getContextUsage() string {
+	// Use actual token count from last processed context if available
+	totalTokens := 0
+	
+	if p.lastProcessedContext != nil {
+		// Use the actual final token count from the processed context
+		totalTokens = p.lastProcessedContext.FinalTokens
+		p.currentContextTokens = totalTokens
+		
+		// Debug log the context details
+		p.debugLog("Context Usage - Final Tokens: %d, Original: %d, Compression: %.2f%%", 
+			p.lastProcessedContext.FinalTokens,
+			p.lastProcessedContext.OriginalTokens,
+			(1.0-p.lastProcessedContext.CompressionRatio)*100)
+	} else {
+		// Estimate if no processed context yet
+		// The context includes:
+		// - System prompt
+		// - Project overview (AGENTS.md)  
+		// - Repository map
+		// - Relevant symbols
+		// - Summarized conversation
+		
+		systemPromptTokens := 50        // "You are CodeForge, an AI coding assistant"
+		projectOverviewTokens := 2000   // AGENTS.md content
+		repoMapTokens := 1000          // Repository structure
+		symbolsTokens := 500           // Relevant symbols
+		conversationTokens := 0         // No conversation yet
+		
+		totalTokens = systemPromptTokens + projectOverviewTokens + repoMapTokens + symbolsTokens + conversationTokens
+		p.currentContextTokens = totalTokens
+	}
+	
+	// Format the display
+	percentage := 0
+	if p.maxContextTokens > 0 {
+		percentage = (p.currentContextTokens * 100) / p.maxContextTokens
+	}
+	
+	// Color code based on usage
+	var percentageStr string
+	if percentage > 90 {
+		percentageStr = p.theme.ErrorText().Render(fmt.Sprintf("%d%%", percentage))
+	} else if percentage > 75 {
+		percentageStr = p.theme.WarningText().Render(fmt.Sprintf("%d%%", percentage))
+	} else {
+		percentageStr = fmt.Sprintf("%d%%", percentage)
+	}
+	
+	// Use K notation for large numbers
+	currentK := float64(p.currentContextTokens) / 1000.0
+	maxK := float64(p.maxContextTokens) / 1000.0
+	
+	if p.maxContextTokens >= 1000 {
+		return fmt.Sprintf("%.1fK/%.0fK (%s)", currentK, maxK, percentageStr)
+	}
+	
+	return fmt.Sprintf("%d/%d (%s)", p.currentContextTokens, p.maxContextTokens, percentageStr)
 }
 
 // Key bindings

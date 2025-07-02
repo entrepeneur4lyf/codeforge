@@ -89,9 +89,7 @@ func (h *HelpDialog) View() string {
 			title: "Editor",
 			keys: []struct{ key, desc string }{
 				{"enter", "Send message"},
-				{"ctrl+enter", "New line"},
-				{"ctrl+e", "Open external editor"},
-				{"ctrl+k", "Clear input"},
+				{"shift+enter", "New line"},
 				{"ctrl+r", "Remove attachment"},
 			},
 		},
