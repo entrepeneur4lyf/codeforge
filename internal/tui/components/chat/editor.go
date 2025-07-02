@@ -171,7 +171,7 @@ func (m *EditorModel) renderAttachments() string {
 	iconStyle := m.theme.SecondaryText()
 	pathStyle := m.theme.MutedText()
 	
-	for i, path := range m.attachments {
+	for _, path := range m.attachments {
 		icon := iconStyle.Render("📎")
 		name := pathStyle.Render(truncatePath(path, 40))
 		attachment := fmt.Sprintf("%s %s", icon, name)

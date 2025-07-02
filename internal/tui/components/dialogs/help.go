@@ -69,17 +69,20 @@ func (h *HelpDialog) View() string {
 				{"?", "Show this help"},
 				{"ctrl+m", "Select model"},
 				{"ctrl+f", "Attach file"},
-				{"ctrl+s", "New session"},
+				{"ctrl+p", "Search files"},
+				{"ctrl+shift+f", "Search in files"},
+				{"ctrl+n", "New session"},
 				{"ctrl+l", "Clear chat"},
 			},
 		},
 		{
 			title: "Navigation",
 			keys: []struct{ key, desc string }{
-				{"↑/↓", "Scroll messages"},
+				{"↑/↓ or j/k", "Scroll messages"},
 				{"PgUp/PgDn", "Page up/down"},
 				{"Home/End", "Jump to start/end"},
 				{"tab", "Switch focus"},
+				{"ctrl+b", "Toggle sidebar"},
 			},
 		},
 		{

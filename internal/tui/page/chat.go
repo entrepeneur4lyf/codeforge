@@ -12,7 +12,6 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/chat"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/dialogs"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/layout"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
 )
 
@@ -293,8 +292,7 @@ func (p *ChatPage) View() string {
 	var mainContent string
 	
 	// Chat view
-	p.chatView.width = mainWidth
-	p.chatView.height = chatHeight - 2
+	p.chatView.SetSize(mainWidth, chatHeight - 2)
 	chatContent := p.chatView.View()
 	
 	// Editor
@@ -311,8 +309,7 @@ func (p *ChatPage) View() string {
 	
 	// Add sidebar if visible
 	if p.showSidebar {
-		p.sessions.width = sidebarWidth - 1
-		p.sessions.height = p.height - 3
+		p.sessions.SetSize(sidebarWidth - 1, p.height - 3)
 		sidebar := p.sessions.View()
 		
 		// Join horizontally
@@ -353,7 +350,7 @@ func (p *ChatPage) renderHeader() string {
 		Width(p.width / 3).
 		Align(lipgloss.Right)
 		
-	sessionCount := len(p.sessions.sessions)
+	sessionCount := p.sessions.GetSessionCount()
 	session := sessionStyle.Render(fmt.Sprintf("Sessions: %d", sessionCount))
 	
 	// Combine

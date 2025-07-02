@@ -33,11 +33,14 @@ type Model struct {
 	modelDialog   tea.Model
 	helpDialog    tea.Model
 	fileDialog    tea.Model
+	searchDialog  tea.Model
 	
 	// Dialog states
-	showModelDialog bool
-	showHelpDialog  bool
-	showFileDialog  bool
+	showModelDialog  bool
+	showHelpDialog   bool
+	showFileDialog   bool
+	showSearchDialog bool
+	searchType       dialogs.SearchType
 	
 	// Current session
 	currentSessionID string
@@ -107,6 +110,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.FileSelect):
 			m.showFileDialog = true
 			return m, nil
+			
+		case key.Matches(msg, keys.FileSearch):
+			m.searchType = dialogs.FileSearch
+			m.searchDialog = dialogs.NewSearchDialog(m.theme, dialogs.FileSearch)
+			m.showSearchDialog = true
+			return m, nil
+			
+		case key.Matches(msg, keys.TextSearch):
+			m.searchType = dialogs.TextSearch
+			m.searchDialog = dialogs.NewSearchDialog(m.theme, dialogs.TextSearch)
+			m.showSearchDialog = true
+			return m, nil
 		}
 		
 	case error:
@@ -127,7 +142,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showModelDialog = false
 		m.showHelpDialog = false
 		m.showFileDialog = false
+		m.showSearchDialog = false
 		return m, nil
+		
+	case dialogs.SearchSelectedMsg:
+		// Handle search result selection
+		m.showSearchDialog = false
+		// Pass to chat model
+		newModel, cmd := m.chatModel.Update(msg)
+		m.chatModel = newModel
+		return m, cmd
 	}
 	
 	// Route to current view
@@ -187,6 +211,15 @@ func (m *Model) View() string {
 		)
 	}
 	
+	if m.showSearchDialog {
+		return layout.PlaceOverlay(
+			m.width, m.height,
+			m.searchDialog.View(),
+			styledContent,
+			layout.Center,
+		)
+	}
+	
 	// Error overlay
 	if m.err != nil {
 		errorView := m.renderError()
@@ -207,6 +240,7 @@ func (m *Model) updateDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showModelDialog = false
 		m.showHelpDialog = false
 		m.showFileDialog = false
+		m.showSearchDialog = false
 		return m, nil
 	}
 	
@@ -226,6 +260,12 @@ func (m *Model) updateDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showFileDialog {
 		newModel, cmd := m.fileDialog.Update(msg)
 		m.fileDialog = newModel
+		return m, cmd
+	}
+	
+	if m.showSearchDialog {
+		newModel, cmd := m.searchDialog.Update(msg)
+		m.searchDialog = newModel
 		return m, cmd
 	}
 	
@@ -272,6 +312,8 @@ type keyMap struct {
 	Help        key.Binding
 	ModelSelect key.Binding
 	FileSelect  key.Binding
+	FileSearch  key.Binding
+	TextSearch  key.Binding
 	Cancel      key.Binding
 }
 
@@ -291,6 +333,14 @@ var keys = keyMap{
 	FileSelect: key.NewBinding(
 		key.WithKeys("ctrl+f"),
 		key.WithHelp("ctrl+f", "attach file"),
+	),
+	FileSearch: key.NewBinding(
+		key.WithKeys("ctrl+p"),
+		key.WithHelp("ctrl+p", "search files"),
+	),
+	TextSearch: key.NewBinding(
+		key.WithKeys("ctrl+shift+f"),
+		key.WithHelp("ctrl+shift+f", "search in files"),
 	),
 	Cancel: key.NewBinding(
 		key.WithKeys("esc"),

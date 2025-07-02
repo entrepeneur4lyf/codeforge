@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
 )
 
@@ -122,7 +121,7 @@ func NewSessionsModel(theme themes.Theme) *SessionsModel {
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = theme.DialogTitleStyle()
 	l.Styles.FilterPrompt = theme.PrimaryText()
-	l.Styles.FilterCursor = theme.Primary()
+	l.Styles.FilterCursor = theme.PrimaryText()
 	
 	return &SessionsModel{
 		theme:    theme,
@@ -331,6 +330,18 @@ func (m *SessionsModel) updateList() {
 // GetCurrentSessionID returns the current session ID
 func (m *SessionsModel) GetCurrentSessionID() string {
 	return m.currentID
+}
+
+// SetSize sets the sessions list size
+func (m *SessionsModel) SetSize(width, height int) {
+	m.width = width
+	m.height = height
+	m.list.SetSize(width, height)
+}
+
+// GetSessionCount returns the number of sessions
+func (m *SessionsModel) GetSessionCount() int {
+	return len(m.sessions)
 }
 
 // Key bindings

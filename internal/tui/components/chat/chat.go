@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
 )
 
@@ -189,7 +188,7 @@ func (m *ChatModel) renderAssistantMessage(msg Message) string {
 	
 	// Try to render as markdown
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithStyles(glamour.DarkStyleConfig),
+		glamour.WithStylePath("dark"),
 		glamour.WithWordWrap(m.width-4),
 	)
 	if err == nil {
@@ -264,4 +263,15 @@ func (m *ChatModel) AtTop() bool {
 // AtBottom returns true if viewport is at the bottom
 func (m *ChatModel) AtBottom() bool {
 	return m.viewport.AtBottom()
+}
+
+// SetSize sets the chat view size
+func (m *ChatModel) SetSize(width, height int) {
+	m.width = width
+	m.height = height
+	if m.ready {
+		m.viewport.Width = width
+		m.viewport.Height = height
+		m.updateViewport()
+	}
 }
