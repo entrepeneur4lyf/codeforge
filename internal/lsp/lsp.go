@@ -182,6 +182,21 @@ func (m *Manager) GetAllClients() map[string]*Client {
 	return clients
 }
 
+// GetActiveClients returns a slice of all active LSP clients
+func (m *Manager) GetActiveClients() []*Client {
+	m.clientsMu.RLock()
+	defer m.clientsMu.RUnlock()
+
+	var clients []*Client
+	for _, client := range m.clients {
+		if client.GetState() == StateReady {
+			clients = append(clients, client)
+		}
+	}
+
+	return clients
+}
+
 // GetClientForFile returns an LSP client for the specified file based on its extension
 func (m *Manager) GetClientForFile(filepath string) *Client {
 	// Detect language from file extension

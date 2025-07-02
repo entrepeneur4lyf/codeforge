@@ -580,68 +580,40 @@ func (p *ChatPage) processMessage(content string, attachments []string) tea.Cmd 
 			defer close(streamChan)
 			defer close(doneChan)
 			
-			// Use the app's streaming API if available
-			handler := p.app.GetLLMHandler(p.currentModel)
-			if handler == nil {
-				// Fallback to non-streaming
-				p.debugLog("Using non-streaming API (no handler available)")
-				response, err := p.app.ProcessChatMessage(ctx, p.currentSessionID, fullContent, p.currentModel)
-				if err != nil {
-					p.debugLog("Non-streaming API error: %v", err)
-					errorChan <- err
-					return
-				}
-				p.debugLog("Non-streaming response received: %d characters", len(response))
-				streamChan <- response
-				doneChan <- true
-				return
-			}
+			// Use the new context-aware streaming method
+			p.debugLog("Using context-aware streaming API")
+			processedCtx, respStreamChan, err := p.app.ProcessChatMessageWithStream(
+				ctx,
+				p.currentSessionID,
+				fullContent,
+				p.currentModel,
+			)
 			
-			// Build messages for streaming
-			p.debugLog("Using streaming API with handler")
-			systemPrompt := "You are CodeForge, an AI coding assistant."
-			messages := []llm.Message{
-				{
-					Role: "user",
-					Content: []llm.ContentBlock{
-						llm.TextBlock{Text: fullContent},
-					},
-				},
-			}
-			
-			// Debug log the exact message structure
-			p.debugLog("System Prompt: %s", systemPrompt)
-			p.debugLog("Messages being sent:")
-			for i, msg := range messages {
-				p.debugLog("  Message %d - Role: %s", i, msg.Role)
-				for j, block := range msg.Content {
-					if textBlock, ok := block.(llm.TextBlock); ok {
-						p.debugLog("    Content Block %d (Text): %s", j, textBlock.Text)
-					}
-				}
-			}
-			
-			// Create streaming request
-			stream, err := handler.CreateMessage(ctx, systemPrompt, messages)
 			if err != nil {
-				p.debugLog("Failed to create streaming request: %v", err)
+				p.debugLog("Context-aware streaming API error: %v", err)
 				errorChan <- err
 				return
+			}
+			
+			// Update context display with processed context
+			if processedCtx != nil {
+				p.lastProcessedContext = processedCtx
+				p.debugLog("Context processed - Final tokens: %d, Compression ratio: %.2f%%",
+					processedCtx.FinalTokens, (1.0-processedCtx.CompressionRatio)*100)
+				
+				// Update context token counts
+				p.currentContextTokens = processedCtx.FinalTokens
 			}
 			
 			p.debugLog("Streaming started, reading chunks...")
 			totalChunks := 0
 			totalLength := 0
 			
-			// Stream the response
-			for chunk := range stream {
-				if textChunk, ok := chunk.(llm.ApiStreamTextChunk); ok {
-					if textChunk.Text != "" {
-						totalChunks++
-						totalLength += len(textChunk.Text)
-						streamChan <- textChunk.Text
-					}
-				}
+			// Forward chunks from the response stream channel
+			for chunk := range respStreamChan {
+				totalChunks++
+				totalLength += len(chunk)
+				streamChan <- chunk
 			}
 			
 			p.debugLog("Streaming completed - Total chunks: %d, Total characters: %d", totalChunks, totalLength)

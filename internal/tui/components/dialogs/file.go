@@ -11,7 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
+	github.com/entrepeneur4lyf/codeforge/internal/tui/styles
+	github.com/entrepeneur4lyf/codeforge/internal/tui/theme
 )
 
 // FileSelectedMsg is sent when files are selected
@@ -21,7 +22,7 @@ type FileSelectedMsg struct {
 
 // FileDialog is a file picker dialog
 type FileDialog struct {
-	theme         themes.Theme
+	theme         theme.Theme
 	width         int
 	height        int
 	currentPath   string
@@ -33,7 +34,7 @@ type FileDialog struct {
 }
 
 // NewFileDialog creates a new file picker dialog
-func NewFileDialog(theme themes.Theme) tea.Model {
+func NewFileDialog(theme theme.Theme) tea.Model {
 	cwd, _ := os.Getwd()
 	return &FileDialog{
 		theme:         theme,
@@ -52,43 +53,43 @@ func (f *FileDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		f.width = msg.Width
 		f.height = msg.Height
-		
+
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, fileKeys.Cancel):
 			return f, func() tea.Msg { return DialogCloseMsg{} }
-			
+
 		case key.Matches(msg, fileKeys.Select):
 			return f, f.handleSelection()
-			
+
 		case key.Matches(msg, fileKeys.Up):
 			f.moveUp()
-			
+
 		case key.Matches(msg, fileKeys.Down):
 			f.moveDown()
-			
+
 		case key.Matches(msg, fileKeys.Enter):
 			return f, f.handleEnter()
-			
+
 		case key.Matches(msg, fileKeys.Back):
 			return f, f.navigateUp()
-			
+
 		case key.Matches(msg, fileKeys.ToggleFile):
 			f.toggleCurrentFile()
-			
+
 		case key.Matches(msg, fileKeys.ToggleHidden):
 			f.showHidden = !f.showHidden
 			return f, f.loadDirectory()
-			
+
 		case key.Matches(msg, fileKeys.Home):
 			return f, f.navigateHome()
 		}
-		
+
 	case directoryLoadedMsg:
 		f.entries = msg.entries
 		f.selectedIndex = 0
 	}
-	
+
 	return f, nil
 }
 
@@ -96,53 +97,53 @@ func (f *FileDialog) View() string {
 	if f.width == 0 || f.height == 0 {
 		return ""
 	}
-	
+
 	// Calculate dialog dimensions
 	dialogWidth := min(f.width-4, 70)
 	dialogHeight := min(f.height-4, 30)
-	
+
 	// Build content
 	var content strings.Builder
-	
+
 	// Title
 	title := "Select Files"
 	if len(f.selectedFiles) > 0 {
 		title = fmt.Sprintf("Select Files (%d selected)", len(f.selectedFiles))
 	}
-	titleStyle := f.theme.DialogTitleStyle().Width(dialogWidth - 4).Align(lipgloss.Center)
+	titleStyle := styles.Bold().Width(dialogWidth - 4).Align(lipgloss.Center).Foreground(f.theme.TextEmphasized())
 	content.WriteString(titleStyle.Render(title))
 	content.WriteString("\n")
-	
+
 	// Current path
-	pathStyle := f.theme.MutedText().Width(dialogWidth - 4)
+	pathStyle := styles.BaseStyle().Foreground(f.theme.TextMuted()).Width(dialogWidth - 4)
 	content.WriteString(pathStyle.Render(truncatePath(f.currentPath, dialogWidth-4)))
 	content.WriteString("\n\n")
-	
+
 	// File list
 	listHeight := dialogHeight - 8
 	content.WriteString(f.renderFileList(dialogWidth-4, listHeight))
 	content.WriteString("\n\n")
-	
+
 	// Help text
 	helpText := f.renderHelp()
-	helpStyle := f.theme.MutedText().Width(dialogWidth - 4).Align(lipgloss.Center)
+	helpStyle := styles.BaseStyle().Foreground(f.theme.TextMuted()).Width(dialogWidth - 4).Align(lipgloss.Center)
 	content.WriteString(helpStyle.Render(helpText))
-	
+
 	// Apply dialog style
-	dialogStyle := f.theme.DialogStyle().
+	dialogStyle := styles.Border().
 		Width(dialogWidth).
 		Height(dialogHeight).
 		MaxWidth(dialogWidth).
 		MaxHeight(dialogHeight)
-		
+
 	return dialogStyle.Render(content.String())
 }
 
 func (f *FileDialog) renderFileList(width, height int) string {
 	if len(f.entries) == 0 {
-		return f.theme.MutedText().Render("Empty directory")
+		return styles.BaseStyle().Foreground(f.theme.TextMuted()).Render("Empty directory")
 	}
-	
+
 	// Calculate visible range
 	visibleItems := height
 	startIdx := 0
@@ -150,32 +151,32 @@ func (f *FileDialog) renderFileList(width, height int) string {
 		startIdx = f.selectedIndex - visibleItems + 1
 	}
 	endIdx := min(startIdx+visibleItems, len(f.entries))
-	
+
 	var lines []string
-	
+
 	// Render entries
 	for i := startIdx; i < endIdx; i++ {
 		entry := f.entries[i]
 		line := f.renderEntry(entry, i == f.selectedIndex, width)
 		lines = append(lines, line)
 	}
-	
+
 	return strings.Join(lines, "\n")
 }
 
 func (f *FileDialog) renderEntry(entry fs.DirEntry, selected bool, width int) string {
 	name := entry.Name()
 	fullPath := filepath.Join(f.currentPath, name)
-	
+
 	var parts []string
-	
+
 	// Selection indicator
 	if selected {
 		parts = append(parts, ">")
 	} else {
 		parts = append(parts, " ")
 	}
-	
+
 	// Checkbox for files
 	if !entry.IsDir() {
 		if f.selectedFiles[fullPath] {
@@ -186,43 +187,43 @@ func (f *FileDialog) renderEntry(entry fs.DirEntry, selected bool, width int) st
 	} else {
 		parts = append(parts, "   ")
 	}
-	
+
 	// Icon
 	if entry.IsDir() {
 		parts = append(parts, "📁")
 	} else {
 		parts = append(parts, getFileIcon(name))
 	}
-	
+
 	// Name
 	if entry.IsDir() {
 		name += "/"
 	}
 	parts = append(parts, name)
-	
+
 	// File info
 	if info, err := entry.Info(); err == nil && !entry.IsDir() {
 		size := formatFileSize(info.Size())
 		parts = append(parts, fmt.Sprintf("(%s)", size))
 	}
-	
+
 	// Join parts
 	line := strings.Join(parts, " ")
-	
+
 	// Apply style
-	style := f.theme.ListItem()
+	style := styles.BaseStyle()
 	if selected {
-		style = f.theme.ListItemActive()
+		style = style.Background(f.theme.Primary()).Foreground(f.theme.Background())
 	}
 	if f.selectedFiles[fullPath] {
 		style = style.Foreground(f.theme.Success())
 	}
-	
+
 	// Truncate if needed
 	if lipgloss.Width(line) > width {
 		line = truncate(line, width-3) + "..."
 	}
-	
+
 	return style.Width(width).Render(line)
 }
 
@@ -245,7 +246,7 @@ func (f *FileDialog) loadDirectory() tea.Cmd {
 		if err != nil {
 			return err
 		}
-		
+
 		// Filter hidden files if needed
 		if !f.showHidden {
 			var filtered []fs.DirEntry
@@ -256,7 +257,7 @@ func (f *FileDialog) loadDirectory() tea.Cmd {
 			}
 			entries = filtered
 		}
-		
+
 		// Sort: directories first, then alphabetically
 		sort.Slice(entries, func(i, j int) bool {
 			if entries[i].IsDir() != entries[j].IsDir() {
@@ -264,7 +265,7 @@ func (f *FileDialog) loadDirectory() tea.Cmd {
 			}
 			return entries[i].Name() < entries[j].Name()
 		})
-		
+
 		return directoryLoadedMsg{entries: entries}
 	}
 }
@@ -290,7 +291,7 @@ func (f *FileDialog) handleSelection() tea.Cmd {
 			paths = append(paths, path)
 		}
 		sort.Strings(paths)
-		
+
 		return func() tea.Msg {
 			return FileSelectedMsg{Paths: paths}
 		}
@@ -384,7 +385,7 @@ func truncatePath(path string, maxWidth int) string {
 	if lipgloss.Width(path) <= maxWidth {
 		return path
 	}
-	
+
 	// Try to show the end of the path
 	parts := strings.Split(path, string(os.PathSeparator))
 	for i := 0; i < len(parts)-1; i++ {
@@ -393,7 +394,7 @@ func truncatePath(path string, maxWidth int) string {
 			return truncated
 		}
 	}
-	
+
 	return "..." + path[len(path)-maxWidth+3:]
 }
 

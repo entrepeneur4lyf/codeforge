@@ -57,6 +57,7 @@ func (pcl *ProjectContextLoader) LoadProjectContext() (*ProjectContext, error) {
 	if len(contextPaths) == 0 {
 		// Use default context paths
 		contextPaths = []string{
+			"AGENTS.md",                   // Primary project context file
 			".codeforge/context.md",
 			".codeforge/instructions.md",
 			"CONTEXT.md",

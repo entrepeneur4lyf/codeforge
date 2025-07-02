@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
 const (
@@ -29,20 +29,20 @@ type DialogCloseMsg struct{}
 
 // ModelDialog represents the model selection dialog
 type ModelDialog struct {
-	app             *app.App
-	theme           themes.Theme
-	providers       []string
-	providerModels  map[string][]llm.ModelResponse
-	currentProvider int
-	currentModel    int
-	width           int
-	height          int
-	favorites       map[string]bool
+	app               *app.App
+	theme             theme.Theme
+	providers         []string
+	providerModels    map[string][]llm.ModelResponse
+	currentProvider   int
+	currentModel      int
+	width             int
+	height            int
+	favorites         map[string]bool
 	showOnlyFavorites bool
 }
 
 // NewModelDialog creates a new model selection dialog
-func NewModelDialog(app *app.App, theme themes.Theme) tea.Model {
+func NewModelDialog(app *app.App, theme theme.Theme) tea.Model {
 	return &ModelDialog{
 		app:            app,
 		theme:          theme,
@@ -62,12 +62,12 @@ func (m *ModelDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		
+
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keys.Cancel):
 			return m, func() tea.Msg { return DialogCloseMsg{} }
-			
+
 		case key.Matches(msg, keys.Select):
 			// Select current model
 			if provider := m.getCurrentProvider(); provider != "" {
@@ -80,28 +80,28 @@ func (m *ModelDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			
+
 		case key.Matches(msg, keys.NextProvider):
 			m.nextProvider()
-			
+
 		case key.Matches(msg, keys.PrevProvider):
 			m.prevProvider()
-			
+
 		case key.Matches(msg, keys.NextModel):
 			m.nextModel()
-			
+
 		case key.Matches(msg, keys.PrevModel):
 			m.prevModel()
-			
+
 		case key.Matches(msg, keys.ToggleFavorite):
 			m.toggleFavorite()
-			
+
 		case key.Matches(msg, keys.ShowFavorites):
 			m.showOnlyFavorites = !m.showOnlyFavorites
 			m.loadModels() // Reload to apply filter
 		}
 	}
-	
+
 	return m, nil
 }
 
@@ -109,14 +109,14 @@ func (m *ModelDialog) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
-	
+
 	// Calculate dialog dimensions
 	dialogWidth := min(m.width-4, dialogMaxWidth)
 	dialogHeight := min(m.height-4, dialogMaxHeight)
-	
+
 	// Build content
 	var content strings.Builder
-	
+
 	// Title
 	title := "Select Model"
 	if m.showOnlyFavorites {
@@ -125,38 +125,38 @@ func (m *ModelDialog) View() string {
 	titleStyle := m.theme.DialogTitleStyle().Width(dialogWidth - 4).Align(lipgloss.Center)
 	content.WriteString(titleStyle.Render(title))
 	content.WriteString("\n\n")
-	
+
 	// Provider tabs
 	content.WriteString(m.renderProviderTabs(dialogWidth - 4))
 	content.WriteString("\n\n")
-	
+
 	// Model list
-	content.WriteString(m.renderModelList(dialogWidth - 4, dialogHeight - 10))
+	content.WriteString(m.renderModelList(dialogWidth-4, dialogHeight-10))
 	content.WriteString("\n\n")
-	
+
 	// Help text
 	helpText := m.renderHelp()
 	helpStyle := m.theme.MutedText().Width(dialogWidth - 4).Align(lipgloss.Center)
 	content.WriteString(helpStyle.Render(helpText))
-	
+
 	// Apply dialog style
 	dialogStyle := m.theme.DialogStyle().
 		Width(dialogWidth).
 		Height(dialogHeight).
 		MaxWidth(dialogWidth).
 		MaxHeight(dialogHeight)
-		
+
 	return dialogStyle.Render(content.String())
 }
 
 func (m *ModelDialog) loadModels() {
 	// Get all available models from the app
 	allModels := m.app.GetAvailableModels()
-	
+
 	// Clear current data
 	m.providers = []string{}
 	m.providerModels = make(map[string][]llm.ModelResponse)
-	
+
 	// Group by provider
 	providerMap := make(map[string][]llm.ModelResponse)
 	for _, model := range allModels {
@@ -169,7 +169,7 @@ func (m *ModelDialog) loadModels() {
 		}
 		providerMap[model.Provider] = append(providerMap[model.Provider], model)
 	}
-	
+
 	// Sort providers by popularity (you can customize this ordering)
 	for provider := range providerMap {
 		m.providers = append(m.providers, provider)
@@ -177,17 +177,17 @@ func (m *ModelDialog) loadModels() {
 	sort.Slice(m.providers, func(i, j int) bool {
 		// Custom provider ordering
 		order := map[string]int{
-			"anthropic":   0,
-			"openai":      1,
-			"gemini":      2,
-			"openrouter":  3,
-			"groq":        4,
-			"local":       5,
+			"anthropic":  0,
+			"openai":     1,
+			"gemini":     2,
+			"openrouter": 3,
+			"groq":       4,
+			"local":      5,
 		}
-		
+
 		iOrder, iOk := order[m.providers[i]]
 		jOrder, jOk := order[m.providers[j]]
-		
+
 		if iOk && jOk {
 			return iOrder < jOrder
 		}
@@ -199,10 +199,10 @@ func (m *ModelDialog) loadModels() {
 		}
 		return m.providers[i] < m.providers[j]
 	})
-	
+
 	// Store models
 	m.providerModels = providerMap
-	
+
 	// Reset selection
 	if m.currentProvider >= len(m.providers) {
 		m.currentProvider = 0
@@ -214,21 +214,21 @@ func (m *ModelDialog) renderProviderTabs(width int) string {
 	if len(m.providers) == 0 {
 		return m.theme.MutedText().Render("No providers available")
 	}
-	
+
 	var tabs []string
 	for i, provider := range m.providers {
 		style := m.theme.Button()
 		if i == m.currentProvider {
 			style = m.theme.ButtonActive()
 		}
-		
+
 		// Add model count
 		count := len(m.providerModels[provider])
 		label := fmt.Sprintf("%s (%d)", provider, count)
-		
+
 		tabs = append(tabs, style.Render(label))
 	}
-	
+
 	// Add scroll indicators
 	prefix := ""
 	suffix := ""
@@ -238,16 +238,16 @@ func (m *ModelDialog) renderProviderTabs(width int) string {
 	if m.currentProvider < len(m.providers)-1 {
 		suffix = m.theme.MutedText().Render(" →")
 	}
-	
+
 	tabLine := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
-	
+
 	// Center and add indicators
 	centeredWidth := lipgloss.Width(tabLine)
 	if centeredWidth < width {
 		padding := (width - centeredWidth) / 2
 		tabLine = strings.Repeat(" ", padding) + tabLine
 	}
-	
+
 	return prefix + tabLine + suffix
 }
 
@@ -256,12 +256,12 @@ func (m *ModelDialog) renderModelList(width, height int) string {
 	if provider == "" {
 		return m.theme.MutedText().Render("No provider selected")
 	}
-	
+
 	models := m.providerModels[provider]
 	if len(models) == 0 {
 		return m.theme.MutedText().Render("No models available for this provider")
 	}
-	
+
 	// Calculate visible range
 	visibleItems := height - 2 // Account for scroll indicators
 	startIdx := 0
@@ -269,40 +269,40 @@ func (m *ModelDialog) renderModelList(width, height int) string {
 		startIdx = m.currentModel - visibleItems + 1
 	}
 	endIdx := min(startIdx+visibleItems, len(models))
-	
+
 	var lines []string
-	
+
 	// Top scroll indicator
 	if startIdx > 0 {
 		lines = append(lines, m.theme.MutedText().Render("↑ more models above"))
 	}
-	
+
 	// Model items
 	for i := startIdx; i < endIdx; i++ {
 		model := models[i]
 		line := m.renderModelItem(model, i == m.currentModel, width)
 		lines = append(lines, line)
 	}
-	
+
 	// Bottom scroll indicator
 	if endIdx < len(models) {
 		lines = append(lines, m.theme.MutedText().Render("↓ more models below"))
 	}
-	
+
 	return strings.Join(lines, "\n")
 }
 
 func (m *ModelDialog) renderModelItem(model llm.ModelResponse, selected bool, width int) string {
 	// Build model info
 	var parts []string
-	
+
 	// Selection indicator
 	if selected {
 		parts = append(parts, ">")
 	} else {
 		parts = append(parts, " ")
 	}
-	
+
 	// Favorite indicator
 	key := fmt.Sprintf("%s:%s", model.Provider, model.Name)
 	if m.favorites[key] {
@@ -310,37 +310,37 @@ func (m *ModelDialog) renderModelItem(model llm.ModelResponse, selected bool, wi
 	} else {
 		parts = append(parts, " ")
 	}
-	
+
 	// Model name
 	parts = append(parts, model.Name)
-	
+
 	// Context window
 	if model.Info.ContextWindow > 0 {
 		ctx := formatContextWindow(model.Info.ContextWindow)
 		parts = append(parts, fmt.Sprintf("[%s]", ctx))
 	}
-	
+
 	// Pricing
 	if model.Info.InputPrice > 0 || model.Info.OutputPrice > 0 {
 		price := fmt.Sprintf("$%.2f/$%.2f", model.Info.InputPrice, model.Info.OutputPrice)
 		parts = append(parts, price)
 	}
-	
+
 	// Join parts
 	line := strings.Join(parts, " ")
-	
+
 	// Apply style
 	style := m.theme.ListItem()
 	if selected {
 		style = m.theme.ListItemSelected()
 	}
-	
+
 	// Truncate if needed
 	maxWidth := width - 4
 	if lipgloss.Width(line) > maxWidth {
 		line = truncate(line, maxWidth-3) + "..."
 	}
-	
+
 	return style.Width(width).Render(line)
 }
 
@@ -369,7 +369,7 @@ func (m *ModelDialog) getCurrentModel() *llm.ModelResponse {
 	if provider == "" {
 		return nil
 	}
-	
+
 	models := m.providerModels[provider]
 	if m.currentModel >= 0 && m.currentModel < len(models) {
 		return &models[m.currentModel]
@@ -411,7 +411,7 @@ func (m *ModelDialog) toggleFavorite() {
 	if model := m.getCurrentModel(); model != nil {
 		key := fmt.Sprintf("%s:%s", model.Provider, model.Name)
 		m.favorites[key] = !m.favorites[key]
-		
+
 		// TODO: Persist favorites to app configuration
 		// m.app.SetModelFavorite(model.Provider, model.Name, m.favorites[key])
 	}
@@ -432,7 +432,7 @@ func truncate(s string, maxWidth int) string {
 	if lipgloss.Width(s) <= maxWidth {
 		return s
 	}
-	
+
 	runes := []rune(s)
 	for i := len(runes); i > 0; i-- {
 		truncated := string(runes[:i])

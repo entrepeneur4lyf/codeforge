@@ -5,8 +5,14 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/config"
+	"github.com/entrepeneur4lyf/codeforge/internal/graph"
+	"github.com/entrepeneur4lyf/codeforge/internal/llm/prompt"
+	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
+	"github.com/entrepeneur4lyf/codeforge/internal/project"
 )
 
 // ContextManager orchestrates all context management features
@@ -18,6 +24,14 @@ type ContextManager struct {
 	cache           *ContextCache
 	compressor      *ContextCompressor
 	relevanceScorer *RelevanceScorer
+	projectLoader   *ProjectContextLoader
+	baseContext     *ProjectContext
+	repoMapCache    string
+	repoMapTime     time.Time
+	
+	// Code intelligence providers
+	codebaseManager *graph.CodebaseManager
+	symbolExtractor *lsp.SymbolExtractor
 }
 
 // NewContextManager creates a new context manager
@@ -30,7 +44,13 @@ func NewContextManager(cfg *config.Config) *ContextManager {
 		cache = NewContextCache(contextConfig.MaxCacheSize, int64(contextConfig.CacheTTL))
 	}
 
-	return &ContextManager{
+	// Get working directory from config
+	workingDir := cfg.WorkingDir
+	if workingDir == "" {
+		workingDir = "."
+	}
+
+	cm := &ContextManager{
 		config:          cfg,
 		tokenCounter:    NewTokenCounter(),
 		summarizer:      NewSummarizer(cfg),
@@ -38,7 +58,20 @@ func NewContextManager(cfg *config.Config) *ContextManager {
 		cache:           cache,
 		compressor:      NewContextCompressor(contextConfig.CompressionLevel),
 		relevanceScorer: NewRelevanceScorer(),
+		projectLoader:   NewProjectContextLoader(cfg, workingDir),
 	}
+
+	// Load base project context on initialization
+	var err error
+	cm.baseContext, err = cm.projectLoader.LoadProjectContext()
+	if err != nil {
+		log.Printf("Warning: Failed to load base project context: %v", err)
+	}
+
+	// Initialize code intelligence providers
+	cm.initializeCodeIntelligence(workingDir)
+
+	return cm
 }
 
 // ProcessConversation processes a conversation for optimal context management
@@ -70,8 +103,8 @@ func (cm *ContextManager) ProcessConversationWithOptions(ctx context.Context, me
 		}
 	}
 
-	// Start with original messages
-	processedMessages := messages
+	// Build full context with base project context
+	processedMessages := cm.buildFullContext(messages, modelID)
 	var summaryResult *SummaryResult
 	var windowResult *WindowResult
 	var compressionResult *CompressionResult
@@ -390,4 +423,192 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// buildFullContext builds the full context including project context
+func (cm *ContextManager) buildFullContext(messages []ConversationMessage, modelID string) []ConversationMessage {
+	var fullContext []ConversationMessage
+
+	// Add system message if not already present
+	hasSystemMessage := false
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			hasSystemMessage = true
+			break
+		}
+	}
+
+	if !hasSystemMessage {
+		// Build system prompt with project context
+		systemPrompt := cm.buildSystemPrompt(modelID)
+		fullContext = append(fullContext, ConversationMessage{
+			Role:      "system",
+			Content:   systemPrompt,
+			Timestamp: time.Now().Unix(),
+			Metadata:  map[string]interface{}{"type": "system_prompt"},
+		})
+	}
+
+	// Add project context from AGENTS.md if available
+	if cm.baseContext != nil && cm.baseContext.CombinedContent != "" {
+		fullContext = append(fullContext, ConversationMessage{
+			Role:      "system",
+			Content:   fmt.Sprintf("## Project Overview\n\n%s", cm.baseContext.CombinedContent),
+			Timestamp: time.Now().Unix(),
+			Metadata:  map[string]interface{}{"type": "project_context"},
+		})
+	}
+
+	// Add repository structure if available
+	repoMap := cm.getRepositoryMap()
+	if repoMap != "" {
+		fullContext = append(fullContext, ConversationMessage{
+			Role:      "system",
+			Content:   fmt.Sprintf("## Repository Structure\n\n%s", repoMap),
+			Timestamp: time.Now().Unix(),
+			Metadata:  map[string]interface{}{"type": "repository_map"},
+		})
+	}
+
+	// Add original messages
+	fullContext = append(fullContext, messages...)
+
+	return fullContext
+}
+
+// buildSystemPrompt builds the system prompt including any coder prompts
+func (cm *ContextManager) buildSystemPrompt(modelID string) string {
+	// Parse provider from model ID
+	provider := cm.parseProviderFromModelID(modelID)
+	
+	// Get the appropriate agent prompt - default to coder agent
+	systemPrompt := prompt.GetAgentPrompt(config.AgentCoder, provider)
+	
+	return systemPrompt
+}
+
+// parseProviderFromModelID extracts the provider from a model ID
+func (cm *ContextManager) parseProviderFromModelID(modelID string) models.ModelProvider {
+	// Handle provider/model format
+	if strings.Contains(modelID, "/") {
+		parts := strings.Split(modelID, "/")
+		if len(parts) >= 2 {
+			providerStr := strings.ToLower(parts[0])
+			switch providerStr {
+			case "anthropic":
+				return models.ProviderAnthropic
+			case "openai":
+				return models.ProviderOpenAI
+			case "gemini", "google":
+				return models.ProviderGemini
+			case "groq":
+				return models.ProviderGROQ
+			case "openrouter":
+				return models.ProviderOpenRouter
+			}
+		}
+	}
+	
+	// Detect provider from model ID patterns
+	modelLower := strings.ToLower(modelID)
+	switch {
+	case strings.HasPrefix(modelLower, "claude-"):
+		return models.ProviderAnthropic
+	case strings.HasPrefix(modelLower, "gpt-") || strings.HasPrefix(modelLower, "o1-"):
+		return models.ProviderOpenAI
+	case strings.HasPrefix(modelLower, "gemini-"):
+		return models.ProviderGemini
+	case strings.Contains(modelLower, "llama") || strings.Contains(modelLower, "mixtral"):
+		return models.ProviderGROQ
+	default:
+		// Default to OpenAI-style prompts
+		return models.ProviderOpenAI
+	}
+}
+
+// getRepositoryMap returns the cached repository map or generates a new one
+func (cm *ContextManager) getRepositoryMap() string {
+	// Check if cache is still valid (refresh every hour)
+	if cm.repoMapCache != "" && time.Since(cm.repoMapTime) < time.Hour {
+		return cm.repoMapCache
+	}
+
+	// Generate new repository map
+	workingDir := cm.config.WorkingDir
+	if workingDir == "" {
+		workingDir = "."
+	}
+	
+	analyzer := project.NewRepositoryAnalyzer(workingDir)
+	repoMap, err := analyzer.GenerateRepoMap()
+	if err != nil {
+		log.Printf("Warning: Failed to generate repository map: %v", err)
+		return ""
+	}
+	
+	// Generate markdown representation
+	mapContent := repoMap.GenerateMarkdown()
+	
+	// Cache the result
+	cm.repoMapCache = mapContent
+	cm.repoMapTime = time.Now()
+	
+	log.Printf("Generated repository map: %d directories, %d files", 
+		repoMap.Summary.TotalDirectories, repoMap.Summary.TotalFiles)
+	
+	return mapContent
+}
+
+// initializeCodeIntelligence initializes code intelligence providers
+func (cm *ContextManager) initializeCodeIntelligence(workingDir string) {
+	// Initialize codebase manager for graph-based code intelligence
+	cm.codebaseManager = graph.NewCodebaseManager()
+	if err := cm.codebaseManager.Initialize(workingDir); err != nil {
+		log.Printf("Warning: Failed to initialize codebase manager: %v", err)
+		// Continue without graph-based intelligence
+		cm.codebaseManager = nil
+	} else {
+		log.Printf("Codebase awareness initialized for advanced code intelligence")
+	}
+	
+	// Initialize LSP symbol extractor
+	lspManager := lsp.GetManager()
+	if lspManager != nil {
+		cm.symbolExtractor = lsp.NewSymbolExtractor(lspManager)
+		log.Printf("LSP symbol extractor initialized")
+	} else {
+		log.Printf("Warning: LSP manager not available, symbol extraction disabled")
+	}
+}
+
+// GetCodeContext returns enhanced code context for a query
+func (cm *ContextManager) GetCodeContext(ctx context.Context, query string, files []string) (string, error) {
+	var contextBuilder strings.Builder
+	
+	// Get graph-based code intelligence if available
+	if cm.codebaseManager != nil && cm.codebaseManager.IsInitialized() {
+		contextBuilder.WriteString("## Code Intelligence\n\n")
+		
+		// Get intelligent context from graph
+		graphContext := cm.codebaseManager.GetContext(query, files...)
+		contextBuilder.WriteString(graphContext)
+		contextBuilder.WriteString("\n\n")
+	}
+	
+	// Get LSP symbols if available
+	if cm.symbolExtractor != nil && len(files) > 0 {
+		symbols, err := cm.symbolExtractor.GetRelevantSymbols(ctx, query, files, 20)
+		if err == nil && len(symbols) > 0 {
+			contextBuilder.WriteString("## Code Symbols\n\n")
+			for _, sym := range symbols {
+				contextBuilder.WriteString(fmt.Sprintf("- **%s** (%s) at %s\n", sym.Name, sym.Kind, sym.Location))
+				if sym.Detail != "" {
+					contextBuilder.WriteString(fmt.Sprintf("  %s\n", sym.Detail))
+				}
+			}
+			contextBuilder.WriteString("\n")
+		}
+	}
+	
+	return contextBuilder.String(), nil
 }

@@ -8,12 +8,12 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
+	github.com/entrepeneur4lyf/codeforge/internal/tui/theme
 )
 
 // SearchDialog is a simple file and text search dialog
 type SearchDialog struct {
-	theme       themes.Theme
+	theme       theme.Theme
 	searchInput textinput.Model
 	results     []SearchResult
 	selected    int
@@ -49,13 +49,13 @@ func NewSearchDialog(theme themes.Theme, searchType SearchType) tea.Model {
 	ti.Focus()
 	ti.CharLimit = 256
 	ti.Width = 50
-	
+
 	if searchType == FileSearch {
 		ti.Placeholder = "Search for files..."
 	} else {
 		ti.Placeholder = "Search in files..."
 	}
-	
+
 	return &SearchDialog{
 		theme:       theme,
 		searchInput: ti,
@@ -70,41 +70,41 @@ func (s *SearchDialog) Init() tea.Cmd {
 
 func (s *SearchDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
-	
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		s.width = msg.Width
 		s.height = msg.Height
 		s.searchInput.Width = min(s.width-8, 60)
-		
+
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, searchKeys.Cancel):
 			return s, func() tea.Msg { return DialogCloseMsg{} }
-			
+
 		case key.Matches(msg, searchKeys.Select):
 			if s.selected >= 0 && s.selected < len(s.results) {
 				return s, func() tea.Msg {
 					return SearchSelectedMsg{Result: s.results[s.selected]}
 				}
 			}
-			
+
 		case key.Matches(msg, searchKeys.Up):
 			if s.selected > 0 {
 				s.selected--
 			}
-			
+
 		case key.Matches(msg, searchKeys.Down):
 			if s.selected < len(s.results)-1 {
 				s.selected++
 			}
-			
+
 		default:
 			// Update search input
 			var cmd tea.Cmd
 			s.searchInput, cmd = s.searchInput.Update(msg)
 			cmds = append(cmds, cmd)
-			
+
 			// Perform search on input change
 			if s.searchInput.Value() != "" {
 				cmds = append(cmds, s.performSearch())
@@ -114,7 +114,7 @@ func (s *SearchDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	
+
 	return s, tea.Batch(cmds...)
 }
 
@@ -122,14 +122,14 @@ func (s *SearchDialog) View() string {
 	if s.width == 0 || s.height == 0 {
 		return ""
 	}
-	
+
 	// Calculate dialog dimensions
 	dialogWidth := min(s.width-4, 80)
 	dialogHeight := min(s.height-4, 30)
-	
+
 	// Build content
 	var content strings.Builder
-	
+
 	// Title
 	title := "File Search"
 	if s.searchType == TextSearch {
@@ -138,12 +138,12 @@ func (s *SearchDialog) View() string {
 	titleStyle := s.theme.DialogTitleStyle().Width(dialogWidth - 4).Align(lipgloss.Center)
 	content.WriteString(titleStyle.Render(title))
 	content.WriteString("\n\n")
-	
+
 	// Search input
 	inputStyle := s.theme.Base().Width(dialogWidth - 4).Align(lipgloss.Center)
 	content.WriteString(inputStyle.Render(s.searchInput.View()))
 	content.WriteString("\n\n")
-	
+
 	// Results
 	if len(s.results) > 0 {
 		resultsView := s.renderResults(dialogWidth-4, dialogHeight-10)
@@ -152,27 +152,27 @@ func (s *SearchDialog) View() string {
 		noResultsStyle := s.theme.MutedText().Width(dialogWidth - 4).Align(lipgloss.Center)
 		content.WriteString(noResultsStyle.Render("No results found"))
 	}
-	
+
 	content.WriteString("\n\n")
-	
+
 	// Help text
 	helpStyle := s.theme.MutedText().Width(dialogWidth - 4).Align(lipgloss.Center)
 	help := "↑/↓: Navigate • Enter: Select • Esc: Cancel"
 	content.WriteString(helpStyle.Render(help))
-	
+
 	// Apply dialog style
 	dialogStyle := s.theme.DialogStyle().
 		Width(dialogWidth).
 		Height(dialogHeight).
 		MaxWidth(dialogWidth).
 		MaxHeight(dialogHeight)
-		
+
 	return dialogStyle.Render(content.String())
 }
 
 func (s *SearchDialog) renderResults(width, maxHeight int) string {
 	var lines []string
-	
+
 	// Calculate visible range
 	visibleItems := maxHeight - 2
 	startIdx := 0
@@ -180,44 +180,44 @@ func (s *SearchDialog) renderResults(width, maxHeight int) string {
 		startIdx = s.selected - visibleItems + 1
 	}
 	endIdx := min(startIdx+visibleItems, len(s.results))
-	
+
 	// Scroll indicator
 	if startIdx > 0 {
 		lines = append(lines, s.theme.MutedText().Render("↑ more results above"))
 	}
-	
+
 	// Render results
 	for i := startIdx; i < endIdx; i++ {
 		result := s.results[i]
 		line := s.renderResult(result, i == s.selected, width)
 		lines = append(lines, line)
 	}
-	
+
 	// Bottom scroll indicator
 	if endIdx < len(s.results) {
 		lines = append(lines, s.theme.MutedText().Render("↓ more results below"))
 	}
-	
+
 	return strings.Join(lines, "\n")
 }
 
 func (s *SearchDialog) renderResult(result SearchResult, selected bool, width int) string {
 	// Build result display
 	var parts []string
-	
+
 	// File path
 	pathStyle := s.theme.SecondaryText()
 	if selected {
 		pathStyle = pathStyle.Bold(true)
 	}
 	parts = append(parts, pathStyle.Render(result.Path))
-	
+
 	// Line number for text search
 	if s.searchType == TextSearch && result.Line > 0 {
 		lineStyle := s.theme.MutedText()
 		parts = append(parts, lineStyle.Render(fmt.Sprintf(":%d", result.Line)))
 	}
-	
+
 	// Content preview for text search
 	if s.searchType == TextSearch && result.Content != "" {
 		// Truncate content
@@ -225,36 +225,36 @@ func (s *SearchDialog) renderResult(result SearchResult, selected bool, width in
 		if len(content) > 60 {
 			content = content[:57] + "..."
 		}
-		
+
 		contentStyle := s.theme.Base()
 		if selected {
 			contentStyle = contentStyle.Foreground(s.theme.Primary())
 		}
-		
+
 		parts = append(parts, "\n  "+contentStyle.Render(content))
 	}
-	
+
 	// Join parts
 	line := strings.Join(parts, "")
-	
+
 	// Apply selection style
 	if selected {
 		style := s.theme.ListItemSelected().Width(width)
 		return style.Render(line)
 	}
-	
+
 	style := s.theme.ListItem().Width(width)
 	return style.Render(line)
 }
 
 func (s *SearchDialog) performSearch() tea.Cmd {
 	query := s.searchInput.Value()
-	
+
 	return func() tea.Msg {
 		// For now, return mock results
 		// In a real implementation, this would call ripgrep or similar
 		var results []SearchResult
-		
+
 		if s.searchType == FileSearch {
 			// Mock file search results
 			results = []SearchResult{
@@ -280,7 +280,7 @@ func (s *SearchDialog) performSearch() tea.Cmd {
 				},
 			}
 		}
-		
+
 		// Filter results based on query
 		var filtered []SearchResult
 		for _, r := range results {
@@ -289,14 +289,13 @@ func (s *SearchDialog) performSearch() tea.Cmd {
 				filtered = append(filtered, r)
 			}
 		}
-		
+
 		s.results = filtered
 		s.selected = 0
-		
+
 		return nil
 	}
 }
-
 
 // Key bindings
 type searchKeyMap struct {

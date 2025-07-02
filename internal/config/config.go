@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -367,6 +369,14 @@ func Get() *Config {
 	return cfg
 }
 
+// WorkingDirectory returns the current working directory from the configuration
+func WorkingDirectory() string {
+	if cfg == nil {
+		panic("config not loaded")
+	}
+	return cfg.WorkingDir
+}
+
 // GetModelConfig returns configuration for a specific model
 func (c *Config) GetModelConfig(modelID string) ModelConfig {
 	if config, exists := c.Models[modelID]; exists {
@@ -671,4 +681,65 @@ func (c *Config) RecordToolUsage(record ToolUsageRecord) {
 	if c.ToolConfigManager != nil {
 		c.ToolConfigManager.RecordToolUsage(record)
 	}
+}
+
+// updateCfgFile updates the configuration file with the provided update function
+func updateCfgFile(updateCfg func(config *Config)) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	// Get the config file path
+	configFile := viper.ConfigFileUsed()
+	var configData []byte
+	if configFile == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get home directory: %w", err)
+		}
+		configFile = filepath.Join(homeDir, fmt.Sprintf(".%s.json", appName))
+		configData = []byte(`{}`)
+	} else {
+		// Read the existing config file
+		data, err := os.ReadFile(configFile)
+		if err != nil {
+			return fmt.Errorf("failed to read config file: %w", err)
+		}
+		configData = data
+	}
+
+	// Parse the JSON
+	var userCfg *Config
+	if err := json.Unmarshal(configData, &userCfg); err != nil {
+		return fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	updateCfg(userCfg)
+
+	// Write the updated config back to file
+	updatedData, err := json.MarshalIndent(userCfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configFile, updatedData, 0o644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateTheme updates the theme in the configuration and writes it to the config file
+func UpdateTheme(themeName string) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	// Update the in-memory config
+	cfg.TUI.Theme = themeName
+
+	// Update the file config
+	return updateCfgFile(func(config *Config) {
+		config.TUI.Theme = themeName
+	})
 }

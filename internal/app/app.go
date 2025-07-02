@@ -648,6 +648,181 @@ func (app *App) GetCurrentModel() (provider, model string) {
 	return defaultModel.Provider, defaultModel.Name
 }
 
+// ProcessChatMessageWithStream processes a chat message with context management and returns a stream channel
+func (app *App) ProcessChatMessageWithStream(ctx context.Context, sessionID, message, modelID string) (*contextmgmt.ProcessedContext, <-chan string, error) {
+	// Publish chat message received event
+	if app.EventManager != nil {
+		app.EventManager.PublishChat(events.ChatMessageReceived, events.ChatEventPayload{
+			SessionID: sessionID,
+			Role:      "user",
+			Content:   message,
+			Model:     modelID,
+		}, events.WithSessionID(sessionID))
+	}
+
+	// Show notification for message processing
+	if app.NotificationManager != nil {
+		app.NotificationManager.Info("Processing Message",
+			fmt.Sprintf("Processing your message with %s...", modelID),
+			notifications.WithSessionID(sessionID),
+			notifications.WithDuration(3*time.Second))
+	}
+
+	// Check if we have permission to process messages
+	if app.PermissionService != nil {
+		check := &permissions.PermissionCheck{
+			SessionID: sessionID,
+			Type:      permissions.PermissionMCPCall,
+			Resource:  "chat_processing",
+			Context: map[string]interface{}{
+				"message": message,
+				"model":   modelID,
+			},
+		}
+
+		result, err := app.PermissionService.CheckPermission(ctx, check)
+		if err != nil {
+			return nil, nil, fmt.Errorf("permission check failed: %w", err)
+		}
+
+		if !result.Allowed {
+			return nil, nil, fmt.Errorf("permission denied: %s", result.Reason)
+		}
+	}
+
+	// Build context using context management
+	var processedCtx *contextmgmt.ProcessedContext
+	var fullContext []contextmgmt.ConversationMessage
+	
+	if app.ContextManager != nil {
+		log.Printf("Building context for streaming response (session %s)", sessionID)
+
+		// Create conversation message for context processing
+		conversationMsg := contextmgmt.ConversationMessage{
+			Role:      "user",
+			Content:   message,
+			Timestamp: time.Now().Unix(),
+			Metadata:  map[string]interface{}{"session_id": sessionID},
+		}
+
+		// Process with relevance filtering for better context
+		var err error
+		processedCtx, err = app.ContextManager.ProcessWithRelevanceFiltering(
+			ctx,
+			[]contextmgmt.ConversationMessage{conversationMsg},
+			modelID,
+			message,
+			0.3, // relevance threshold
+		)
+		if err != nil {
+			log.Printf("Warning: Failed to process context: %v", err)
+			// Fall back to simple message
+			fullContext = []contextmgmt.ConversationMessage{conversationMsg}
+		} else {
+			fullContext = processedCtx.Messages
+			log.Printf("Context processed: %d messages, %d tokens", len(fullContext), processedCtx.FinalTokens)
+			// Log first few messages for debugging
+			for i, msg := range fullContext {
+				if i < 3 {
+					preview := msg.Content
+					if len(preview) > 100 {
+						preview = preview[:100] + "..."
+					}
+					log.Printf("  Message %d [%s]: %s", i, msg.Role, preview)
+				}
+			}
+		}
+	} else {
+		// No context manager, use simple message
+		fullContext = []contextmgmt.ConversationMessage{
+			{
+				Role:      "user",
+				Content:   message,
+				Timestamp: time.Now().Unix(),
+			},
+		}
+	}
+
+	// Create stream channel for response
+	streamChan := make(chan string, 100)
+	
+	// Process with LLM in background
+	go func() {
+		defer close(streamChan)
+		
+		// Get LLM handler
+		handler := app.GetLLMHandler(modelID)
+		if handler == nil {
+			streamChan <- fmt.Sprintf("Error: Failed to get handler for model %s", modelID)
+			return
+		}
+
+		// Convert context messages to LLM messages
+		messages := []llm.Message{}
+		
+		// Build system prompt from first system messages in context
+		systemPrompt := ""
+		for _, msg := range fullContext {
+			if msg.Role == "system" {
+				if systemPrompt != "" {
+					systemPrompt += "\n\n"
+				}
+				systemPrompt += msg.Content
+			} else {
+				// Add non-system messages
+				messages = append(messages, llm.Message{
+					Role: msg.Role,
+					Content: []llm.ContentBlock{
+						llm.TextBlock{Text: msg.Content},
+					},
+				})
+			}
+		}
+		
+		// If no system prompt found, use default
+		if systemPrompt == "" {
+			systemPrompt = "You are CodeForge, an AI coding assistant."
+		}
+
+		// Stream response from LLM
+		stream, err := handler.CreateMessage(ctx, systemPrompt, messages)
+		if err != nil {
+			streamChan <- fmt.Sprintf("Error: %v", err)
+			return
+		}
+
+		// Forward chunks to stream channel
+		fullResponse := ""
+		for chunk := range stream {
+			if textChunk, ok := chunk.(llm.ApiStreamTextChunk); ok {
+				if textChunk.Text != "" {
+					streamChan <- textChunk.Text
+					fullResponse += textChunk.Text
+				}
+			}
+		}
+
+		// Publish chat message sent event
+		if app.EventManager != nil {
+			app.EventManager.PublishChat(events.ChatMessageSent, events.ChatEventPayload{
+				SessionID: sessionID,
+				Role:      "assistant",
+				Content:   fullResponse,
+				Model:     modelID,
+			}, events.WithSessionID(sessionID))
+		}
+
+		// Show success notification
+		if app.NotificationManager != nil {
+			app.NotificationManager.Success("Response Ready",
+				"Your message has been processed successfully",
+				notifications.WithSessionID(sessionID))
+		}
+	}()
+
+	return processedCtx, streamChan, nil
+}
+
 // GetLLMHandler returns an LLM handler for the specified model
 func (app *App) GetLLMHandler(modelID string) llm.ApiHandler {
 	// Parse provider from model ID
