@@ -389,7 +389,7 @@ func (pv *PathValidator) isPermissionSufficient(have, need PermissionType) bool 
 }
 
 // isDefaultAllowed determines if path is allowed by default rules
-func (pv *PathValidator) isDefaultAllowed(path string, permType PermissionType) bool {
+func (pv *PathValidator) isDefaultAllowed(path string, _ PermissionType) bool {
 	// Default deny for system paths
 	if pv.isSystemPath(path) {
 		return false

@@ -10,12 +10,22 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/diff"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm/tools"
-	"github.com/entrepeneur4lyf/codeforge/internal/permission"
+	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/layout"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/styles"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/util"
 )
+
+// Helper function to safely get a string value from context
+func getStringFromContext(context map[string]interface{}, key string) string {
+	if value, exists := context[key]; exists {
+		if str, ok := value.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
 
 type PermissionAction string
 
@@ -28,7 +38,7 @@ const (
 
 // PermissionResponseMsg represents the user's response to a permission request
 type PermissionResponseMsg struct {
-	Permission permission.PermissionRequest
+	Permission permissions.PermissionRequest
 	Action     PermissionAction
 }
 
@@ -36,7 +46,7 @@ type PermissionResponseMsg struct {
 type PermissionDialogCmp interface {
 	tea.Model
 	layout.Bindings
-	SetPermissions(permission permission.PermissionRequest) tea.Cmd
+	SetPermissions(permission permissions.PermissionRequest) tea.Cmd
 }
 
 type permissionsMapping struct {
@@ -84,7 +94,7 @@ var permissionsKeys = permissionsMapping{
 type permissionDialogCmp struct {
 	width           int
 	height          int
-	permission      permission.PermissionRequest
+	permission      permissions.PermissionRequest
 	windowSize      tea.WindowSizeMsg
 	contentViewPort viewport.Model
 	selectedOption  int // 0: Allow, 1: Allow for session, 2: Deny
@@ -202,13 +212,13 @@ func (p *permissionDialogCmp) renderHeader() string {
 	toolValue := baseStyle.
 		Foreground(t.Text()).
 		Width(p.width - lipgloss.Width(toolKey)).
-		Render(fmt.Sprintf(": %s", p.permission.ToolName))
+		Render(fmt.Sprintf(": %s", getStringFromContext(p.permission.Context, "tool")))
 
 	pathKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("Path")
 	pathValue := baseStyle.
 		Foreground(t.Text()).
 		Width(p.width - lipgloss.Width(pathKey)).
-		Render(fmt.Sprintf(": %s", p.permission.Path))
+		Render(fmt.Sprintf(": %s", p.permission.Resource))
 
 	headerParts := []string{
 		lipgloss.JoinHorizontal(
@@ -226,11 +236,11 @@ func (p *permissionDialogCmp) renderHeader() string {
 	}
 
 	// Add tool-specific header information
-	switch p.permission.ToolName {
+	switch getStringFromContext(p.permission.Context, "tool") {
 	case tools.BashToolName:
 		headerParts = append(headerParts, baseStyle.Foreground(t.TextMuted()).Width(p.width).Bold(true).Render("Command"))
 	case tools.EditToolName:
-		params := p.permission.Params.(tools.EditPermissionsParams)
+		params, _ := p.permission.Context["params"].(tools.EditPermissionsParams)
 		fileKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("File")
 		filePath := baseStyle.
 			Foreground(t.Text()).
@@ -246,7 +256,7 @@ func (p *permissionDialogCmp) renderHeader() string {
 		)
 
 	case tools.WriteToolName:
-		params := p.permission.Params.(tools.WritePermissionsParams)
+		params := p.permission.Context["params"].(tools.WritePermissionsParams)
 		fileKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("File")
 		filePath := baseStyle.
 			Foreground(t.Text()).
@@ -271,7 +281,7 @@ func (p *permissionDialogCmp) renderBashContent() string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
 
-	if pr, ok := p.permission.Params.(tools.BashPermissionsParams); ok {
+	if pr, ok := p.permission.Context["params"].(tools.BashPermissionsParams); ok {
 		content := fmt.Sprintf("```bash\n%s\n```", pr.Command)
 
 		// Use the cache for markdown rendering
@@ -291,7 +301,7 @@ func (p *permissionDialogCmp) renderBashContent() string {
 }
 
 func (p *permissionDialogCmp) renderEditContent() string {
-	if pr, ok := p.permission.Params.(tools.EditPermissionsParams); ok {
+	if pr, ok := p.permission.Context["params"].(tools.EditPermissionsParams); ok {
 		diff := p.GetOrSetDiff(p.permission.ID, func() (string, error) {
 			return diff.FormatDiff(pr.Diff, diff.WithTotalWidth(p.contentViewPort.Width))
 		})
@@ -303,7 +313,7 @@ func (p *permissionDialogCmp) renderEditContent() string {
 }
 
 func (p *permissionDialogCmp) renderPatchContent() string {
-	if pr, ok := p.permission.Params.(tools.EditPermissionsParams); ok {
+	if pr, ok := p.permission.Context["params"].(tools.EditPermissionsParams); ok {
 		diff := p.GetOrSetDiff(p.permission.ID, func() (string, error) {
 			return diff.FormatDiff(pr.Diff, diff.WithTotalWidth(p.contentViewPort.Width))
 		})
@@ -315,7 +325,7 @@ func (p *permissionDialogCmp) renderPatchContent() string {
 }
 
 func (p *permissionDialogCmp) renderWriteContent() string {
-	if pr, ok := p.permission.Params.(tools.WritePermissionsParams); ok {
+	if pr, ok := p.permission.Context["params"].(tools.WritePermissionsParams); ok {
 		// Use the cache for diff rendering
 		diff := p.GetOrSetDiff(p.permission.ID, func() (string, error) {
 			return diff.FormatDiff(pr.Diff, diff.WithTotalWidth(p.contentViewPort.Width))
@@ -331,7 +341,7 @@ func (p *permissionDialogCmp) renderFetchContent() string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
 
-	if pr, ok := p.permission.Params.(tools.FetchPermissionsParams); ok {
+	if pr, ok := p.permission.Context["params"].(tools.FetchPermissionsParams); ok {
 		content := fmt.Sprintf("```bash\n%s\n```", pr.URL)
 
 		// Use the cache for markdown rendering
@@ -354,7 +364,7 @@ func (p *permissionDialogCmp) renderDefaultContent() string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
 
-	content := p.permission.Description
+	content := p.permission.Reason
 
 	// Use the cache for markdown rendering
 	renderedContent := p.GetOrSetMarkdown(p.permission.ID, func() (string, error) {
@@ -403,7 +413,7 @@ func (p *permissionDialogCmp) render() string {
 
 	// Render content based on tool type
 	var contentFinal string
-	switch p.permission.ToolName {
+	switch getStringFromContext(p.permission.Context, "tool") {
 	case tools.BashToolName:
 		contentFinal = p.renderBashContent()
 	case tools.EditToolName:
@@ -452,7 +462,7 @@ func (p *permissionDialogCmp) SetSize() tea.Cmd {
 	if p.permission.ID == "" {
 		return nil
 	}
-	switch p.permission.ToolName {
+	switch getStringFromContext(p.permission.Context, "tool") {
 	case tools.BashToolName:
 		p.width = int(float64(p.windowSize.Width) * 0.4)
 		p.height = int(float64(p.windowSize.Height) * 0.3)
@@ -472,7 +482,7 @@ func (p *permissionDialogCmp) SetSize() tea.Cmd {
 	return nil
 }
 
-func (p *permissionDialogCmp) SetPermissions(permission permission.PermissionRequest) tea.Cmd {
+func (p *permissionDialogCmp) SetPermissions(permission permissions.PermissionRequest) tea.Cmd {
 	p.permission = permission
 	return p.SetSize()
 }

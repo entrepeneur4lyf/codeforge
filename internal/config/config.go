@@ -154,6 +154,8 @@ const (
 var defaultContextPaths = []string{
 	".github/copilot-instructions.md",
 	".cursorrules",
+	".clinerules",
+	".windsurfrules",
 	".cursor/rules/",
 	"CLAUDE.md",
 	"CLAUDE.local.md",

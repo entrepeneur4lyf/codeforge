@@ -1,4 +1,4 @@
-package dialogs
+package dialog
 
 import (
 	"fmt"
@@ -11,8 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	github.com/entrepeneur4lyf/codeforge/internal/tui/styles
-	github.com/entrepeneur4lyf/codeforge/internal/tui/theme
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
 // FileSelectedMsg is sent when files are selected
@@ -110,12 +109,18 @@ func (f *FileDialog) View() string {
 	if len(f.selectedFiles) > 0 {
 		title = fmt.Sprintf("Select Files (%d selected)", len(f.selectedFiles))
 	}
-	titleStyle := styles.Bold().Width(dialogWidth - 4).Align(lipgloss.Center).Foreground(f.theme.TextEmphasized())
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center).
+		Foreground(f.theme.TextEmphasized())
 	content.WriteString(titleStyle.Render(title))
 	content.WriteString("\n")
 
 	// Current path
-	pathStyle := styles.BaseStyle().Foreground(f.theme.TextMuted()).Width(dialogWidth - 4)
+	pathStyle := lipgloss.NewStyle().
+		Foreground(f.theme.TextMuted()).
+		Width(dialogWidth - 4)
 	content.WriteString(pathStyle.Render(truncatePath(f.currentPath, dialogWidth-4)))
 	content.WriteString("\n\n")
 
@@ -126,11 +131,16 @@ func (f *FileDialog) View() string {
 
 	// Help text
 	helpText := f.renderHelp()
-	helpStyle := styles.BaseStyle().Foreground(f.theme.TextMuted()).Width(dialogWidth - 4).Align(lipgloss.Center)
+	helpStyle := lipgloss.NewStyle().
+		Foreground(f.theme.TextMuted()).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
 	content.WriteString(helpStyle.Render(helpText))
 
 	// Apply dialog style
-	dialogStyle := styles.Border().
+	dialogStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(f.theme.BorderNormal()).
 		Width(dialogWidth).
 		Height(dialogHeight).
 		MaxWidth(dialogWidth).
@@ -141,7 +151,9 @@ func (f *FileDialog) View() string {
 
 func (f *FileDialog) renderFileList(width, height int) string {
 	if len(f.entries) == 0 {
-		return styles.BaseStyle().Foreground(f.theme.TextMuted()).Render("Empty directory")
+		return lipgloss.NewStyle().
+			Foreground(f.theme.TextMuted()).
+			Render("Empty directory")
 	}
 
 	// Calculate visible range
@@ -211,7 +223,7 @@ func (f *FileDialog) renderEntry(entry fs.DirEntry, selected bool, width int) st
 	line := strings.Join(parts, " ")
 
 	// Apply style
-	style := styles.BaseStyle()
+	style := lipgloss.NewStyle()
 	if selected {
 		style = style.Background(f.theme.Primary()).Foreground(f.theme.Background())
 	}

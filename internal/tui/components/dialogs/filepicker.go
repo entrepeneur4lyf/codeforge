@@ -15,11 +15,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
-	"github.com/entrepeneur4lyf/codeforge/internal/config"
 	"github.com/entrepeneur4lyf/codeforge/internal/logging"
-	"github.com/entrepeneur4lyf/codeforge/internal/message"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/image"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/styles"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/util"
 )
@@ -108,8 +105,16 @@ func (s stack) Pop() (stack, int) {
 	return s[:l-1], s[l-1]
 }
 
+// Attachment represents a file attachment
+type Attachment struct {
+	FilePath string
+	FileName string
+	MimeType string
+	Content  []byte
+}
+
 type AttachmentAddedMsg struct {
-	Attachment message.Attachment
+	Attachment Attachment
 }
 
 func (f *filepickerCmp) Init() tea.Cmd {
@@ -222,11 +227,12 @@ func (f *filepickerCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (f *filepickerCmp) addAttachmentToMessage() (tea.Model, tea.Cmd) {
-	modeInfo := GetSelectedModel(config.Get())
-	if !modeInfo.SupportsAttachments {
-		logging.ErrorPersist(fmt.Sprintf("Model %s doesn't support attachments", modeInfo.Name))
-		return f, nil
-	}
+	// TODO: Fix GetSelectedModel
+	// modeInfo := GetSelectedModel(config.Get())
+	// if !modeInfo.SupportsAttachments {
+	// 	logging.ErrorPersist(fmt.Sprintf("Model %s doesn't support attachments", modeInfo.Name))
+	// 	return f, nil
+	// }
 
 	selectedFilePath := f.selectedFile
 	if !isExtSupported(selectedFilePath) {
@@ -253,7 +259,7 @@ func (f *filepickerCmp) addAttachmentToMessage() (tea.Model, tea.Cmd) {
 	mimeBufferSize := min(512, len(content))
 	mimeType := http.DetectContentType(content[:mimeBufferSize])
 	fileName := filepath.Base(selectedFilePath)
-	attachment := message.Attachment{FilePath: selectedFilePath, FileName: fileName, MimeType: mimeType, Content: content}
+	attachment := Attachment{FilePath: selectedFilePath, FileName: fileName, MimeType: mimeType, Content: content}
 	f.selectedFile = ""
 	return f, util.CmdHandler(AttachmentAddedMsg{attachment})
 }
@@ -287,7 +293,7 @@ func (f *filepickerCmp) View() string {
 
 	for i := startIdx; i < endIdx; i++ {
 		file := f.dirs[i]
-		itemStyle := styles.BaseStyle().Width(adjustedWidth)
+		itemStyle := lipgloss.NewStyle().Width(adjustedWidth)
 
 		if i == f.cursor {
 			itemStyle = itemStyle.
@@ -310,10 +316,10 @@ func (f *filepickerCmp) View() string {
 
 	// Pad to always show exactly 21 lines
 	for len(files) < maxVisibleDirs {
-		files = append(files, styles.BaseStyle().Width(adjustedWidth).Render(""))
+		files = append(files, lipgloss.NewStyle().Width(adjustedWidth).Render(""))
 	}
 
-	currentPath := styles.BaseStyle().
+	currentPath := lipgloss.NewStyle().
 		Height(1).
 		Width(adjustedWidth).
 		Render(f.cwd.View())
@@ -336,14 +342,14 @@ func (f *filepickerCmp) View() string {
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		currentPath,
-		styles.BaseStyle().Width(adjustedWidth).Render(""),
-		styles.BaseStyle().Width(adjustedWidth).Render(lipgloss.JoinVertical(lipgloss.Left, files...)),
-		styles.BaseStyle().Width(adjustedWidth).Render(""),
-		styles.BaseStyle().Foreground(t.TextMuted()).Width(adjustedWidth).Render(insertExitText),
+		lipgloss.NewStyle().Width(adjustedWidth).Render(""),
+		lipgloss.NewStyle().Width(adjustedWidth).Render(lipgloss.JoinVertical(lipgloss.Left, files...)),
+		lipgloss.NewStyle().Width(adjustedWidth).Render(""),
+		lipgloss.NewStyle().Foreground(t.TextMuted()).Width(adjustedWidth).Render(insertExitText),
 	)
 
 	f.cwd.SetValue(f.cwd.Value())
-	contentStyle := styles.BaseStyle().Padding(1, 2).
+	contentStyle := lipgloss.NewStyle().Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
 		BorderBackground(t.Background()).
 		BorderForeground(t.TextMuted()).

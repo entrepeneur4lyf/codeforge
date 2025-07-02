@@ -18,14 +18,14 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
 	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/chat"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/dialogs"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
+	dialog "github.com/entrepeneur4lyf/codeforge/internal/tui/components/dialogs"
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
 // ChatPage represents the main chat interface
 type ChatPage struct {
 	app         *app.App
-	theme       themes.Theme
+	theme       theme.Theme
 	
 	// Layout
 	width       int
@@ -54,7 +54,7 @@ type ChatPage struct {
 }
 
 // NewChatPage creates a new chat page
-func NewChatPage(app *app.App, theme themes.Theme) *ChatPage {
+func NewChatPage(app *app.App, theme theme.Theme) *ChatPage {
 	// Create initial session
 	sessionID := fmt.Sprintf("session-%d", time.Now().Unix())
 	
@@ -247,13 +247,13 @@ func (p *ChatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		}
 		
-	case dialogs.FileSelectedMsg:
+	case dialog.FileSelectedMsg:
 		// Add attachments
 		for _, path := range msg.Paths {
 			p.editor.AddAttachment(path)
 		}
 		
-	case dialogs.ModelSelectedMsg:
+	case dialog.ModelSelectedMsg:
 		// Update current model
 		p.currentModel = fmt.Sprintf("%s/%s", msg.Provider, msg.Model)
 		p.app.SetCurrentModel(msg.Provider, msg.Model)
@@ -330,7 +330,7 @@ func (p *ChatPage) View() string {
 	mainContent = lipgloss.JoinVertical(
 		lipgloss.Top,
 		chatContent,
-		p.theme.Base().Height(1).Render(""), // Spacer
+		lipgloss.NewStyle().Height(1).Render(""), // Spacer
 		editorContent,
 	)
 	
@@ -343,7 +343,7 @@ func (p *ChatPage) View() string {
 		mainContent = lipgloss.JoinHorizontal(
 			lipgloss.Left,
 			sidebar,
-			p.theme.Base().Width(1).Render(""), // Spacer
+			lipgloss.NewStyle().Width(1).Render(""), // Spacer
 			mainContent,
 		)
 	}
@@ -359,21 +359,24 @@ func (p *ChatPage) View() string {
 
 func (p *ChatPage) renderHeader() string {
 	// Title
-	titleStyle := p.theme.DialogTitleStyle().
+	titleStyle := lipgloss.NewStyle().
+		Foreground(p.theme.TextEmphasized()).
 		Width(p.width / 3).
 		Align(lipgloss.Left)
 		
 	title := titleStyle.Render("CodeForge Chat")
 	
 	// Model info
-	modelStyle := p.theme.SecondaryText().
+	modelStyle := lipgloss.NewStyle().
+		Foreground(p.theme.TextMuted()).
 		Width(p.width / 3).
 		Align(lipgloss.Center)
 		
 	model := modelStyle.Render(fmt.Sprintf("Model: %s", p.currentModel))
 	
 	// Session info
-	sessionStyle := p.theme.MutedText().
+	sessionStyle := lipgloss.NewStyle().
+		Foreground(p.theme.TextMuted()).
 		Width(p.width / 3).
 		Align(lipgloss.Right)
 		
@@ -389,7 +392,8 @@ func (p *ChatPage) renderHeader() string {
 	)
 	
 	// Add border
-	return p.theme.Base().
+	return lipgloss.NewStyle().
+		Background(p.theme.Background()).
 		BorderBottom(true).
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(p.theme.Primary()).
@@ -409,30 +413,38 @@ func (p *ChatPage) renderStatusBar() string {
 		focusText = "Sessions"
 	}
 	
-	focusStyle := p.theme.StatusKey()
+	focusStyle := lipgloss.NewStyle().
+		Foreground(p.theme.Accent())
 	focus := focusStyle.Render(fmt.Sprintf("Focus: %s", focusText))
 	
 	// Processing indicator
 	var status string
 	if p.isProcessing {
-		status = p.theme.WarningText().Render("Processing...")
+		status = lipgloss.NewStyle().
+			Foreground(p.theme.Warning()).
+			Render("Processing...")
 	} else if p.lastError != nil {
-		status = p.theme.ErrorText().Render("Error")
+		status = lipgloss.NewStyle().
+			Foreground(p.theme.Error()).
+			Render("Error")
 	} else {
-		status = p.theme.SuccessText().Render("Ready")
+		status = lipgloss.NewStyle().
+			Foreground(p.theme.Success()).
+			Render("Ready")
 	}
 	
 	// Help
-	helpStyle := p.theme.MutedText()
+	helpStyle := lipgloss.NewStyle().
+		Foreground(p.theme.TextMuted())
 	help := helpStyle.Render("Tab: Switch Focus • Ctrl+B: Toggle Sidebar • ?: Help")
 	
 	// Left side combined
 	leftSide := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		focus,
-		p.theme.Base().Width(2).Render(""),
+		lipgloss.NewStyle().Width(2).Render(""),
 		status,
-		p.theme.Base().Width(2).Render(""),
+		lipgloss.NewStyle().Width(2).Render(""),
 		help,
 	)
 	
@@ -440,14 +452,17 @@ func (p *ChatPage) renderStatusBar() string {
 	modelInfo := p.getModelInfo()
 	contextUsage := p.getContextUsage()
 	
-	modelStyle := p.theme.PrimaryText()
-	contextStyle := p.theme.SecondaryText()
+	modelStyle := lipgloss.NewStyle().
+		Foreground(p.theme.Text())
+	contextStyle := lipgloss.NewStyle().
+		Foreground(p.theme.TextMuted())
 	
 	rightContent := fmt.Sprintf("%s • %s", 
 		modelStyle.Render(modelInfo),
 		contextStyle.Render(contextUsage))
 	
-	rightSide := p.theme.Base().
+	rightSide := lipgloss.NewStyle().
+		Background(p.theme.Background()).
 		Width(lipgloss.Width(rightContent)).
 		Align(lipgloss.Right).
 		Render(rightContent)
@@ -464,11 +479,12 @@ func (p *ChatPage) renderStatusBar() string {
 	statusBar := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		leftSide,
-		p.theme.Base().Width(spacerWidth).Render(""),
+		lipgloss.NewStyle().Width(spacerWidth).Render(""),
 		rightSide,
 	)
 	
-	return p.theme.StatusBar().
+	return lipgloss.NewStyle().
+		Background(p.theme.BackgroundSecondary()).
 		Width(p.width).
 		Render(statusBar)
 }
@@ -740,9 +756,13 @@ func (p *ChatPage) getContextUsage() string {
 	// Color code based on usage
 	var percentageStr string
 	if percentage > 90 {
-		percentageStr = p.theme.ErrorText().Render(fmt.Sprintf("%d%%", percentage))
+		percentageStr = lipgloss.NewStyle().
+			Foreground(p.theme.Error()).
+			Render(fmt.Sprintf("%d%%", percentage))
 	} else if percentage > 75 {
-		percentageStr = p.theme.WarningText().Render(fmt.Sprintf("%d%%", percentage))
+		percentageStr = lipgloss.NewStyle().
+			Foreground(p.theme.Warning()).
+			Render(fmt.Sprintf("%d%%", percentage))
 	} else {
 		percentageStr = fmt.Sprintf("%d%%", percentage)
 	}

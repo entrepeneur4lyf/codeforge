@@ -1,4 +1,4 @@
-package dialogs
+package dialog
 
 import (
 	"strings"
@@ -53,7 +53,10 @@ func (h *HelpDialog) View() string {
 	var content strings.Builder
 
 	// Title
-	titleStyle := h.theme.DialogTitleStyle().Width(dialogWidth - 4).Align(lipgloss.Center)
+	titleStyle := lipgloss.NewStyle().
+		Foreground(h.theme.TextEmphasized()).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
 	content.WriteString(titleStyle.Render("CodeForge TUI Help"))
 	content.WriteString("\n\n")
 
@@ -113,14 +116,19 @@ func (h *HelpDialog) View() string {
 		}
 
 		// Section title
-		sectionStyle := h.theme.SecondaryText().Bold(true)
+		sectionStyle := lipgloss.NewStyle().
+			Foreground(h.theme.TextMuted()).
+			Bold(true)
 		content.WriteString(sectionStyle.Render(section.title))
 		content.WriteString("\n")
 
 		// Key bindings
 		for _, binding := range section.keys {
-			keyStyle := h.theme.PrimaryText().Width(15)
-			descStyle := h.theme.Base()
+			keyStyle := lipgloss.NewStyle().
+				Foreground(h.theme.Text()).
+				Width(15)
+			descStyle := lipgloss.NewStyle().
+				Background(h.theme.Background())
 
 			line := lipgloss.JoinHorizontal(
 				lipgloss.Top,
@@ -133,11 +141,16 @@ func (h *HelpDialog) View() string {
 
 	// Footer
 	content.WriteString("\n")
-	footerStyle := h.theme.MutedText().Width(dialogWidth - 4).Align(lipgloss.Center)
+	footerStyle := lipgloss.NewStyle().
+		Foreground(h.theme.TextMuted()).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
 	content.WriteString(footerStyle.Render("Press any key to close"))
 
 	// Apply dialog style
-	dialogStyle := h.theme.DialogStyle().
+	dialogStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(h.theme.BorderNormal()).
 		Width(dialogWidth).
 		Height(dialogHeight).
 		MaxWidth(dialogWidth).

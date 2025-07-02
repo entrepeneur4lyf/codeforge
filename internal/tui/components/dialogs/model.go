@@ -1,4 +1,4 @@
-package dialogs
+package dialog
 
 import (
 	"fmt"
@@ -122,7 +122,10 @@ func (m *ModelDialog) View() string {
 	if m.showOnlyFavorites {
 		title += " (Favorites)"
 	}
-	titleStyle := m.theme.DialogTitleStyle().Width(dialogWidth - 4).Align(lipgloss.Center)
+	titleStyle := lipgloss.NewStyle().
+		Foreground(m.theme.TextEmphasized()).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
 	content.WriteString(titleStyle.Render(title))
 	content.WriteString("\n\n")
 
@@ -136,11 +139,16 @@ func (m *ModelDialog) View() string {
 
 	// Help text
 	helpText := m.renderHelp()
-	helpStyle := m.theme.MutedText().Width(dialogWidth - 4).Align(lipgloss.Center)
+	helpStyle := lipgloss.NewStyle().
+		Foreground(m.theme.TextMuted()).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
 	content.WriteString(helpStyle.Render(helpText))
 
 	// Apply dialog style
-	dialogStyle := m.theme.DialogStyle().
+	dialogStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.theme.BorderNormal()).
 		Width(dialogWidth).
 		Height(dialogHeight).
 		MaxWidth(dialogWidth).
@@ -212,14 +220,22 @@ func (m *ModelDialog) loadModels() {
 
 func (m *ModelDialog) renderProviderTabs(width int) string {
 	if len(m.providers) == 0 {
-		return m.theme.MutedText().Render("No providers available")
+		return lipgloss.NewStyle().
+			Foreground(m.theme.TextMuted()).
+			Render("No providers available")
 	}
 
 	var tabs []string
 	for i, provider := range m.providers {
-		style := m.theme.Button()
+		style := lipgloss.NewStyle().
+			Padding(0, 2).
+			Background(m.theme.BackgroundSecondary()).
+			Foreground(m.theme.Text())
 		if i == m.currentProvider {
-			style = m.theme.ButtonActive()
+			style = lipgloss.NewStyle().
+				Padding(0, 2).
+				Background(m.theme.Primary()).
+				Foreground(m.theme.Background())
 		}
 
 		// Add model count
@@ -233,10 +249,14 @@ func (m *ModelDialog) renderProviderTabs(width int) string {
 	prefix := ""
 	suffix := ""
 	if m.currentProvider > 0 {
-		prefix = m.theme.MutedText().Render("← ")
+		prefix = lipgloss.NewStyle().
+			Foreground(m.theme.TextMuted()).
+			Render("← ")
 	}
 	if m.currentProvider < len(m.providers)-1 {
-		suffix = m.theme.MutedText().Render(" →")
+		suffix = lipgloss.NewStyle().
+			Foreground(m.theme.TextMuted()).
+			Render(" →")
 	}
 
 	tabLine := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
@@ -254,12 +274,16 @@ func (m *ModelDialog) renderProviderTabs(width int) string {
 func (m *ModelDialog) renderModelList(width, height int) string {
 	provider := m.getCurrentProvider()
 	if provider == "" {
-		return m.theme.MutedText().Render("No provider selected")
+		return lipgloss.NewStyle().
+			Foreground(m.theme.TextMuted()).
+			Render("No provider selected")
 	}
 
 	models := m.providerModels[provider]
 	if len(models) == 0 {
-		return m.theme.MutedText().Render("No models available for this provider")
+		return lipgloss.NewStyle().
+			Foreground(m.theme.TextMuted()).
+			Render("No models available for this provider")
 	}
 
 	// Calculate visible range
@@ -274,7 +298,9 @@ func (m *ModelDialog) renderModelList(width, height int) string {
 
 	// Top scroll indicator
 	if startIdx > 0 {
-		lines = append(lines, m.theme.MutedText().Render("↑ more models above"))
+		lines = append(lines, lipgloss.NewStyle().
+			Foreground(m.theme.TextMuted()).
+			Render("↑ more models above"))
 	}
 
 	// Model items
@@ -286,7 +312,9 @@ func (m *ModelDialog) renderModelList(width, height int) string {
 
 	// Bottom scroll indicator
 	if endIdx < len(models) {
-		lines = append(lines, m.theme.MutedText().Render("↓ more models below"))
+		lines = append(lines, lipgloss.NewStyle().
+			Foreground(m.theme.TextMuted()).
+			Render("↓ more models below"))
 	}
 
 	return strings.Join(lines, "\n")
@@ -330,9 +358,12 @@ func (m *ModelDialog) renderModelItem(model llm.ModelResponse, selected bool, wi
 	line := strings.Join(parts, " ")
 
 	// Apply style
-	style := m.theme.ListItem()
+	style := lipgloss.NewStyle().
+		Background(m.theme.Background())
 	if selected {
-		style = m.theme.ListItemSelected()
+		style = lipgloss.NewStyle().
+			Background(m.theme.Primary()).
+			Foreground(m.theme.Background())
 	}
 
 	// Truncate if needed

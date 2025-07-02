@@ -9,7 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
 // Session represents a chat session
@@ -23,7 +24,7 @@ type Session struct {
 
 // SessionsModel represents the session list sidebar
 type SessionsModel struct {
-	theme        themes.Theme
+	theme        theme.Theme
 	sessions     []Session
 	list         list.Model
 	width        int
@@ -63,7 +64,7 @@ func (i sessionItem) Description() string {
 
 // sessionDelegate implements list.ItemDelegate
 type sessionDelegate struct {
-	theme     themes.Theme
+	theme     theme.Theme
 	currentID string
 }
 
@@ -78,7 +79,8 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, item list.
 	}
 	
 	// Base style
-	style := d.theme.ListItem().
+	style := lipgloss.NewStyle().
+		Background(d.theme.Background()).
 		Width(m.Width() - 4).
 		Padding(0, 1)
 	
@@ -86,7 +88,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, item list.
 	if i.current {
 		style = style.
 			Background(d.theme.Primary()).
-			Foreground(d.theme.BackgroundColor())
+			Foreground(d.theme.Background())
 	}
 	
 	// Highlight selected item
@@ -102,7 +104,9 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, item list.
 	}
 	
 	// Description
-	desc := d.theme.MutedText().Render(i.Description())
+	desc := lipgloss.NewStyle().
+		Foreground(d.theme.TextMuted()).
+		Render(i.Description())
 	
 	// Render
 	content := fmt.Sprintf("%s\n%s", title, desc)
@@ -110,7 +114,7 @@ func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, item list.
 }
 
 // NewSessionsModel creates a new sessions sidebar
-func NewSessionsModel(theme themes.Theme) *SessionsModel {
+func NewSessionsModel(theme theme.Theme) *SessionsModel {
 	// Create list
 	items := []list.Item{}
 	delegate := sessionDelegate{theme: theme}
@@ -119,9 +123,12 @@ func NewSessionsModel(theme themes.Theme) *SessionsModel {
 	l.Title = "Sessions"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
-	l.Styles.Title = theme.DialogTitleStyle()
-	l.Styles.FilterPrompt = theme.PrimaryText()
-	l.Styles.FilterCursor = theme.PrimaryText()
+	l.Styles.Title = lipgloss.NewStyle().
+		Foreground(theme.TextEmphasized())
+	l.Styles.FilterPrompt = lipgloss.NewStyle().
+		Foreground(theme.Text())
+	l.Styles.FilterCursor = lipgloss.NewStyle().
+		Foreground(theme.Text())
 	
 	return &SessionsModel{
 		theme:    theme,
@@ -198,14 +205,17 @@ func (m *SessionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *SessionsModel) View() string {
 	// Container style
-	containerStyle := m.theme.Border().
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(m.theme.BorderNormal()).
 		Width(m.width).
 		Height(m.height).
 		Padding(1)
 		
 	// Add title if not focused
 	if !m.focused {
-		titleStyle := m.theme.DialogTitleStyle().
+		titleStyle := lipgloss.NewStyle().
+			Foreground(m.theme.TextEmphasized()).
 			Width(m.width - 4).
 			MarginBottom(1)
 		title := titleStyle.Render("Sessions")
@@ -227,7 +237,8 @@ func (m *SessionsModel) View() string {
 
 func (m *SessionsModel) renderSession(session Session, selected bool) string {
 	// Base style
-	style := m.theme.ListItem().
+	style := lipgloss.NewStyle().
+		Background(m.theme.Background()).
 		Width(m.width - 6).
 		Padding(0, 1)
 		
@@ -235,7 +246,7 @@ func (m *SessionsModel) renderSession(session Session, selected bool) string {
 	if session.ID == m.currentID {
 		style = style.
 			Background(m.theme.Primary()).
-			Foreground(m.theme.BackgroundColor())
+			Foreground(m.theme.Background())
 	}
 	
 	// Highlight selected
@@ -251,10 +262,12 @@ func (m *SessionsModel) renderSession(session Session, selected bool) string {
 	}
 	
 	// Info
-	info := m.theme.MutedText().Render(
-		fmt.Sprintf("%d msgs • %s", 
-			session.MessageCount,
-			session.UpdatedAt.Format("15:04")))
+	info := lipgloss.NewStyle().
+		Foreground(m.theme.TextMuted()).
+		Render(
+			fmt.Sprintf("%d msgs • %s", 
+				session.MessageCount,
+				session.UpdatedAt.Format("15:04")))
 	
 	return style.Render(fmt.Sprintf("%s\n%s", title, info))
 }

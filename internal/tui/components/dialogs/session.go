@@ -4,7 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/entrepeneur4lyf/codeforge/internal/session"
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/chat"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/layout"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/styles"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
@@ -13,7 +13,7 @@ import (
 
 // SessionSelectedMsg is sent when a session is selected
 type SessionSelectedMsg struct {
-	Session session.Session
+	Session chat.Session
 }
 
 // CloseSessionDialogMsg is sent when the session dialog is closed
@@ -23,12 +23,12 @@ type CloseSessionDialogMsg struct{}
 type SessionDialog interface {
 	tea.Model
 	layout.Bindings
-	SetSessions(sessions []session.Session)
+	SetSessions(sessions []chat.Session)
 	SetSelectedSession(sessionID string)
 }
 
 type sessionDialogCmp struct {
-	sessions          []session.Session
+	sessions          []chat.Session
 	selectedIdx       int
 	width             int
 	height            int
@@ -189,7 +189,7 @@ func (s *sessionDialogCmp) BindingKeys() []key.Binding {
 	return layout.KeyMapToSlice(sessionKeys)
 }
 
-func (s *sessionDialogCmp) SetSessions(sessions []session.Session) {
+func (s *sessionDialogCmp) SetSessions(sessions []chat.Session) {
 	s.sessions = sessions
 
 	// If we have a selected session ID, find its index
@@ -223,7 +223,7 @@ func (s *sessionDialogCmp) SetSelectedSession(sessionID string) {
 // NewSessionDialogCmp creates a new session switching dialog
 func NewSessionDialogCmp() SessionDialog {
 	return &sessionDialogCmp{
-		sessions:          []session.Session{},
+		sessions:          []chat.Session{},
 		selectedIdx:       0,
 		selectedSessionID: "",
 	}

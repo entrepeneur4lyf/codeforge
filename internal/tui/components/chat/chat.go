@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
@@ -163,10 +164,14 @@ func (m *ChatModel) updateViewport() {
 }
 
 func (m *ChatModel) renderUserMessage(msg Message) string {
-	header := m.theme.PrimaryText().Bold(true).Render("You:")
+	header := lipgloss.NewStyle().
+		Foreground(m.theme.Text()).
+		Bold(true).
+		Render("You:")
 
 	// Style the content
-	contentStyle := m.theme.Base().
+	contentStyle := lipgloss.NewStyle().
+		Background(m.theme.Background()).
 		PaddingLeft(2).
 		Width(m.width - 4)
 
@@ -176,7 +181,10 @@ func (m *ChatModel) renderUserMessage(msg Message) string {
 }
 
 func (m *ChatModel) renderAssistantMessage(msg Message) string {
-	header := m.theme.SecondaryText().Bold(true).Render("Assistant:")
+	header := lipgloss.NewStyle().
+		Foreground(m.theme.TextMuted()).
+		Bold(true).
+		Render("Assistant:")
 
 	// Render markdown if possible
 	content := msg.Content
@@ -198,7 +206,8 @@ func (m *ChatModel) renderAssistantMessage(msg Message) string {
 	}
 
 	// Apply padding
-	contentStyle := m.theme.Base().
+	contentStyle := lipgloss.NewStyle().
+		Background(m.theme.Background()).
 		PaddingLeft(2).
 		Width(m.width - 4)
 
@@ -206,7 +215,8 @@ func (m *ChatModel) renderAssistantMessage(msg Message) string {
 
 	// Add error if present
 	if msg.Error != nil {
-		errorStyle := m.theme.ErrorText().
+		errorStyle := lipgloss.NewStyle().
+			Foreground(m.theme.Error()).
 			PaddingLeft(2).
 			Width(m.width - 4)
 		errorMsg := errorStyle.Render(fmt.Sprintf("Error: %v", msg.Error))
@@ -217,7 +227,8 @@ func (m *ChatModel) renderAssistantMessage(msg Message) string {
 }
 
 func (m *ChatModel) renderSystemMessage(msg Message) string {
-	style := m.theme.MutedText().
+	style := lipgloss.NewStyle().
+		Foreground(m.theme.TextMuted()).
 		Italic(true).
 		PaddingLeft(2).
 		Width(m.width - 4)

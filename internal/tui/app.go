@@ -5,11 +5,12 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/dialogs"
+	dialog "github.com/entrepeneur4lyf/codeforge/internal/tui/components/dialogs"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/layout"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/page"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
 type sessionState int
@@ -27,7 +28,7 @@ type Model struct {
 	state         sessionState
 	width         int
 	height        int
-	theme         themes.Theme
+	theme         theme.Theme
 	
 	// Dialogs
 	modelDialog   tea.Model
@@ -40,7 +41,7 @@ type Model struct {
 	showHelpDialog   bool
 	showFileDialog   bool
 	showSearchDialog bool
-	searchType       dialogs.SearchType
+	searchType       dialog.SearchType
 	
 	// Current session
 	currentSessionID string
@@ -50,8 +51,8 @@ type Model struct {
 }
 
 func New(application *app.App) *Model {
-	// Use simple theme for better terminal compatibility
-	theme := themes.NewSimpleTheme()
+	// Use default theme
+	theme := theme.NewDefaultTheme()
 	
 	return &Model{
 		app:    application,
@@ -63,9 +64,9 @@ func New(application *app.App) *Model {
 func (m *Model) Init() tea.Cmd {
 	// Initialize components
 	m.chatModel = m.createChatModel()
-	m.modelDialog = dialogs.NewModelDialog(m.app, m.theme)
-	m.helpDialog = dialogs.NewHelpDialog(m.theme)
-	m.fileDialog = dialogs.NewFileDialog(m.theme)
+	m.modelDialog = dialog.NewModelDialog(m.app, m.theme)
+	m.helpDialog = dialog.NewHelpDialog(m.theme)
+	m.fileDialog = dialog.NewFileDialog(m.theme)
 	
 	// Initialize chat component
 	return m.chatModel.Init()
@@ -113,14 +114,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 			
 		case key.Matches(msg, keys.FileSearch):
-			m.searchType = dialogs.FileSearch
-			m.searchDialog = dialogs.NewSearchDialog(m.theme, dialogs.FileSearch)
+			m.searchType = dialog.FileSearch
+			m.searchDialog = dialog.NewSearchDialog(m.theme, dialog.FileSearch)
 			m.showSearchDialog = true
 			return m, nil
 			
 		case key.Matches(msg, keys.TextSearch):
-			m.searchType = dialogs.TextSearch
-			m.searchDialog = dialogs.NewSearchDialog(m.theme, dialogs.TextSearch)
+			m.searchType = dialog.TextSearch
+			m.searchDialog = dialog.NewSearchDialog(m.theme, dialog.TextSearch)
 			m.showSearchDialog = true
 			return m, nil
 		}
@@ -129,7 +130,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg
 		return m, nil
 		
-	case dialogs.ModelSelectedMsg:
+	case dialog.ModelSelectedMsg:
 		// Handle model selection
 		m.showModelDialog = false
 		// Update current model in app
@@ -138,7 +139,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 		
-	case dialogs.DialogCloseMsg:
+	case dialog.DialogCloseMsg:
 		// Close any open dialog
 		m.showModelDialog = false
 		m.showHelpDialog = false
@@ -146,7 +147,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showSearchDialog = false
 		return m, nil
 		
-	case dialogs.SearchSelectedMsg:
+	case dialog.SearchSelectedMsg:
 		// Handle search result selection
 		m.showSearchDialog = false
 		// Pass to chat model
@@ -179,7 +180,8 @@ func (m *Model) View() string {
 	}
 	
 	// Apply theme styling
-	styledContent := m.theme.Base().
+	styledContent := lipgloss.NewStyle().
+		Background(m.theme.Background()).
 		Width(m.width).
 		Height(m.height).
 		Render(content)
@@ -283,7 +285,8 @@ func (m *Model) renderError() string {
 		return ""
 	}
 	
-	style := m.theme.ErrorStyle().
+	style := lipgloss.NewStyle().
+		Foreground(m.theme.Error()).
 		Width(m.width - 4).
 		Padding(1, 2)
 		

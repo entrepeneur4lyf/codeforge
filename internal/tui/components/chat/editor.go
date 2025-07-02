@@ -8,12 +8,12 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/themes"
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
 // EditorModel represents the message input editor
 type EditorModel struct {
-	theme        themes.Theme
+	theme        theme.Theme
 	textarea     textarea.Model
 	attachments  []string
 	width        int
@@ -39,7 +39,7 @@ type AttachmentRemovedMsg struct {
 }
 
 // NewEditorModel creates a new editor component
-func NewEditorModel(theme themes.Theme) *EditorModel {
+func NewEditorModel(theme theme.Theme) *EditorModel {
 	ta := textarea.New()
 	ta.Placeholder = "Type your message... (Ctrl+Enter to send)"
 	ta.CharLimit = 10000
@@ -49,8 +49,12 @@ func NewEditorModel(theme themes.Theme) *EditorModel {
 	ta.ShowLineNumbers = false
 	
 	// Style the textarea
-	ta.FocusedStyle.Base = theme.InputActive()
-	ta.BlurredStyle.Base = theme.Input()
+	ta.FocusedStyle.Base = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(theme.BorderFocused())
+	ta.BlurredStyle.Base = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(theme.BorderNormal())
 	
 	return &EditorModel{
 		theme:       theme,
@@ -152,7 +156,8 @@ func (m *EditorModel) View() string {
 	}
 	
 	// Editor section
-	editorStyle := m.theme.Base().
+	editorStyle := lipgloss.NewStyle().
+		Background(m.theme.Background()).
 		Width(m.width).
 		Padding(0, 1)
 		
@@ -160,7 +165,8 @@ func (m *EditorModel) View() string {
 	sections = append(sections, editor)
 	
 	// Help text
-	helpStyle := m.theme.MutedText().
+	helpStyle := lipgloss.NewStyle().
+		Foreground(m.theme.TextMuted()).
 		Width(m.width).
 		Align(lipgloss.Center)
 		
@@ -173,8 +179,10 @@ func (m *EditorModel) View() string {
 func (m *EditorModel) renderAttachments() string {
 	var attachments []string
 	
-	iconStyle := m.theme.SecondaryText()
-	pathStyle := m.theme.MutedText()
+	iconStyle := lipgloss.NewStyle().
+		Foreground(m.theme.TextMuted())
+	pathStyle := lipgloss.NewStyle().
+		Foreground(m.theme.TextMuted())
 	
 	for _, path := range m.attachments {
 		icon := iconStyle.Render("📎")
@@ -183,7 +191,8 @@ func (m *EditorModel) renderAttachments() string {
 		attachments = append(attachments, attachment)
 	}
 	
-	containerStyle := m.theme.Base().
+	containerStyle := lipgloss.NewStyle().
+		Background(m.theme.Background()).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(m.theme.Primary()).
 		Padding(0, 1).

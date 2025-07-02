@@ -1,4 +1,4 @@
-package dialogs
+package dialog
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	github.com/entrepeneur4lyf/codeforge/internal/tui/theme
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
 // SearchDialog is a simple file and text search dialog
@@ -44,7 +44,7 @@ type SearchSelectedMsg struct {
 }
 
 // NewSearchDialog creates a new search dialog
-func NewSearchDialog(theme themes.Theme, searchType SearchType) tea.Model {
+func NewSearchDialog(theme theme.Theme, searchType SearchType) tea.Model {
 	ti := textinput.New()
 	ti.Focus()
 	ti.CharLimit = 256
@@ -135,12 +135,15 @@ func (s *SearchDialog) View() string {
 	if s.searchType == TextSearch {
 		title = "Text Search"
 	}
-	titleStyle := s.theme.DialogTitleStyle().Width(dialogWidth - 4).Align(lipgloss.Center)
+	titleStyle := lipgloss.NewStyle().
+		Foreground(s.theme.TextEmphasized()).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
 	content.WriteString(titleStyle.Render(title))
 	content.WriteString("\n\n")
 
 	// Search input
-	inputStyle := s.theme.Base().Width(dialogWidth - 4).Align(lipgloss.Center)
+	inputStyle := lipgloss.NewStyle().Width(dialogWidth - 4).Align(lipgloss.Center)
 	content.WriteString(inputStyle.Render(s.searchInput.View()))
 	content.WriteString("\n\n")
 
@@ -149,19 +152,27 @@ func (s *SearchDialog) View() string {
 		resultsView := s.renderResults(dialogWidth-4, dialogHeight-10)
 		content.WriteString(resultsView)
 	} else if s.searchInput.Value() != "" {
-		noResultsStyle := s.theme.MutedText().Width(dialogWidth - 4).Align(lipgloss.Center)
+		noResultsStyle := lipgloss.NewStyle().
+			Foreground(s.theme.TextMuted()).
+			Width(dialogWidth - 4).
+			Align(lipgloss.Center)
 		content.WriteString(noResultsStyle.Render("No results found"))
 	}
 
 	content.WriteString("\n\n")
 
 	// Help text
-	helpStyle := s.theme.MutedText().Width(dialogWidth - 4).Align(lipgloss.Center)
+	helpStyle := lipgloss.NewStyle().
+		Foreground(s.theme.TextMuted()).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
 	help := "↑/↓: Navigate • Enter: Select • Esc: Cancel"
 	content.WriteString(helpStyle.Render(help))
 
 	// Apply dialog style
-	dialogStyle := s.theme.DialogStyle().
+	dialogStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(s.theme.BorderNormal()).
 		Width(dialogWidth).
 		Height(dialogHeight).
 		MaxWidth(dialogWidth).
@@ -183,7 +194,9 @@ func (s *SearchDialog) renderResults(width, maxHeight int) string {
 
 	// Scroll indicator
 	if startIdx > 0 {
-		lines = append(lines, s.theme.MutedText().Render("↑ more results above"))
+		lines = append(lines, lipgloss.NewStyle().
+			Foreground(s.theme.TextMuted()).
+			Render("↑ more results above"))
 	}
 
 	// Render results
@@ -195,7 +208,9 @@ func (s *SearchDialog) renderResults(width, maxHeight int) string {
 
 	// Bottom scroll indicator
 	if endIdx < len(s.results) {
-		lines = append(lines, s.theme.MutedText().Render("↓ more results below"))
+		lines = append(lines, lipgloss.NewStyle().
+			Foreground(s.theme.TextMuted()).
+			Render("↓ more results below"))
 	}
 
 	return strings.Join(lines, "\n")
@@ -206,7 +221,8 @@ func (s *SearchDialog) renderResult(result SearchResult, selected bool, width in
 	var parts []string
 
 	// File path
-	pathStyle := s.theme.SecondaryText()
+	pathStyle := lipgloss.NewStyle().
+		Foreground(s.theme.TextMuted())
 	if selected {
 		pathStyle = pathStyle.Bold(true)
 	}
@@ -214,7 +230,8 @@ func (s *SearchDialog) renderResult(result SearchResult, selected bool, width in
 
 	// Line number for text search
 	if s.searchType == TextSearch && result.Line > 0 {
-		lineStyle := s.theme.MutedText()
+		lineStyle := lipgloss.NewStyle().
+			Foreground(s.theme.TextMuted())
 		parts = append(parts, lineStyle.Render(fmt.Sprintf(":%d", result.Line)))
 	}
 
@@ -226,7 +243,7 @@ func (s *SearchDialog) renderResult(result SearchResult, selected bool, width in
 			content = content[:57] + "..."
 		}
 
-		contentStyle := s.theme.Base()
+		contentStyle := lipgloss.NewStyle()
 		if selected {
 			contentStyle = contentStyle.Foreground(s.theme.Primary())
 		}
@@ -239,11 +256,16 @@ func (s *SearchDialog) renderResult(result SearchResult, selected bool, width in
 
 	// Apply selection style
 	if selected {
-		style := s.theme.ListItemSelected().Width(width)
+		style := lipgloss.NewStyle().
+			Background(s.theme.Primary()).
+			Foreground(s.theme.Background()).
+			Width(width)
 		return style.Render(line)
 	}
 
-	style := s.theme.ListItem().Width(width)
+	style := lipgloss.NewStyle().
+		Background(s.theme.Background()).
+		Width(width)
 	return style.Render(line)
 }
 
