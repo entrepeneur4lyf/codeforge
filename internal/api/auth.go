@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -235,6 +236,28 @@ func (auth *LocalhostAuth) ValidateTokenWithContext(tokenString, ipAddress, user
 	return foundSession, nil
 }
 
+// hijackerResponseWriter wraps http.ResponseWriter and preserves http.Hijacker interface
+type hijackerResponseWriter struct {
+	http.ResponseWriter
+	hijacker http.Hijacker
+}
+
+// Hijack implements http.Hijacker interface
+func (hrw *hijackerResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return hrw.hijacker.Hijack()
+}
+
+// newHijackerResponseWriter creates a new hijacker-aware response writer
+func newHijackerResponseWriter(w http.ResponseWriter) http.ResponseWriter {
+	if hijacker, ok := w.(http.Hijacker); ok {
+		return &hijackerResponseWriter{
+			ResponseWriter: w,
+			hijacker:       hijacker,
+		}
+	}
+	return w
+}
+
 // AuthMiddleware provides authentication middleware for localhost
 func (auth *LocalhostAuth) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -273,7 +296,9 @@ func (auth *LocalhostAuth) AuthMiddleware(next http.Handler) http.Handler {
 		// Add session to request context
 		r = r.WithContext(WithSession(r.Context(), session))
 
-		next.ServeHTTP(w, r)
+		// Use hijacker-aware response writer for WebSocket and SSE endpoints
+		hijackerAwareWriter := newHijackerResponseWriter(w)
+		next.ServeHTTP(hijackerAwareWriter, r)
 	})
 }
 

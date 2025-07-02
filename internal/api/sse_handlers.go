@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"runtime"
 	"time"
@@ -47,11 +48,29 @@ type ServiceStatus struct {
 
 // handleMetricsSSE handles Server-Sent Events for metrics
 func (s *Server) handleMetricsSSE(w http.ResponseWriter, r *http.Request) {
+	// Add error recovery
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("SSE metrics handler panic recovered: %v", r)
+		}
+	}()
+
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Ensure we can flush
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send initial connection confirmation
+	fmt.Fprintf(w, "data: {\"type\": \"connected\", \"timestamp\": %d}\n\n", time.Now().Unix())
+	flusher.Flush()
 
 	// Create a channel for this client
 	clientChan := make(chan SSEEvent, 10)
@@ -74,18 +93,39 @@ func (s *Server) handleMetricsSSE(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 			s.sendMetricsEvent(clientChan)
 		case event := <-clientChan:
-			s.writeSSEEvent(w, event)
+			if err := s.writeSSEEvent(w, event); err != nil {
+				log.Printf("Failed to write SSE metrics event: %v", err)
+				return
+			}
 		}
 	}
 }
 
 // handleStatusSSE handles Server-Sent Events for service status
 func (s *Server) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
+	// Add error recovery
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("SSE handler panic recovered: %v", r)
+		}
+	}()
+
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Ensure we can flush
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send initial connection confirmation
+	fmt.Fprintf(w, "data: {\"type\": \"connected\", \"timestamp\": %d}\n\n", time.Now().Unix())
+	flusher.Flush()
 
 	// Create a channel for this client
 	clientChan := make(chan SSEEvent, 10)
@@ -108,13 +148,22 @@ func (s *Server) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 			s.sendStatusEvent(clientChan)
 		case event := <-clientChan:
-			s.writeSSEEvent(w, event)
+			if err := s.writeSSEEvent(w, event); err != nil {
+				log.Printf("Failed to write SSE event: %v", err)
+				return
+			}
 		}
 	}
 }
 
 // sendMetricsEvent sends current metrics to the client
 func (s *Server) sendMetricsEvent(clientChan chan SSEEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("sendMetricsEvent panic recovered: %v", r)
+		}
+	}()
+
 	metrics := s.collectMetrics()
 
 	event := SSEEvent{
@@ -127,11 +176,18 @@ func (s *Server) sendMetricsEvent(clientChan chan SSEEvent) {
 	case clientChan <- event:
 	default:
 		// Channel is full, skip this update
+		log.Printf("SSE metrics channel full, skipping update")
 	}
 }
 
 // sendStatusEvent sends current service status to the client
 func (s *Server) sendStatusEvent(clientChan chan SSEEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("sendStatusEvent panic recovered: %v", r)
+		}
+	}()
+
 	status := s.collectServiceStatus()
 
 	event := SSEEvent{
@@ -144,32 +200,43 @@ func (s *Server) sendStatusEvent(clientChan chan SSEEvent) {
 	case clientChan <- event:
 	default:
 		// Channel is full, skip this update
+		log.Printf("SSE status channel full, skipping update")
 	}
 }
 
 // writeSSEEvent writes an SSE event to the response writer
-func (s *Server) writeSSEEvent(w http.ResponseWriter, event SSEEvent) {
+func (s *Server) writeSSEEvent(w http.ResponseWriter, event SSEEvent) error {
 	if event.ID != "" {
-		fmt.Fprintf(w, "id: %s\n", event.ID)
+		if _, err := fmt.Fprintf(w, "id: %s\n", event.ID); err != nil {
+			return err
+		}
 	}
 
 	if event.Event != "" {
-		fmt.Fprintf(w, "event: %s\n", event.Event)
+		if _, err := fmt.Fprintf(w, "event: %s\n", event.Event); err != nil {
+			return err
+		}
 	}
 
 	// Serialize data to JSON
 	data, err := json.Marshal(event.Data)
 	if err != nil {
-		fmt.Fprintf(w, "data: {\"error\": \"Failed to serialize data\"}\n\n")
-		return
+		if _, writeErr := fmt.Fprintf(w, "data: {\"error\": \"Failed to serialize data\"}\n\n"); writeErr != nil {
+			return writeErr
+		}
+		return err
 	}
 
-	fmt.Fprintf(w, "data: %s\n\n", string(data))
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", string(data)); err != nil {
+		return err
+	}
 
 	// Flush the data to the client
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
+
+	return nil
 }
 
 // collectMetrics collects current system metrics

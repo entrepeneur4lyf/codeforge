@@ -505,7 +505,7 @@ func (sfr *SafeFileReader) ReadFile(ctx context.Context, path string) ([]byte, e
 	}
 
 	if !result.Success {
-		return nil, fmt.Errorf(result.Error)
+		return nil, fmt.Errorf("%s", result.Error)
 	}
 
 	return result.Content, nil
@@ -541,7 +541,7 @@ func (sfw *SafeFileWriter) WriteFile(ctx context.Context, path string, content [
 	}
 
 	if !result.Success {
-		return fmt.Errorf(result.Error)
+		return fmt.Errorf("%s", result.Error)
 	}
 
 	return nil

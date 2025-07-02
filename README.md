@@ -6,7 +6,7 @@ Thanks to: Cline, Pocketbase, OpenRouter, Turso, SST/Opencode. Opencode.ai/Openc
 
 <div align="center">
 
-**🚀 AI-Powered Coding Assistant with Advanced Intelligence**
+**AI-Powered Coding Assistant with Advanced Intelligence**
 
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -17,26 +17,26 @@ Thanks to: Cline, Pocketbase, OpenRouter, Turso, SST/Opencode. Opencode.ai/Openc
 
 </div>
 
-## 📚 Overview
+## Overview
 
-**CodeForge** is a soon-to-be production-ready (**WARNING**: currently WIP)  AI-powered coding assistant that provides intelligent, adaptive code assistance through comprehensive LLM support. With support for 300+ models from 50+ providers, smart database caching, and advanced code intelligence, CodeForge delivers enterprise-grade AI assistance for developers.
+**CodeForge** is a soon-to-be production-ready (**WARNING**: currently WIP) AI-powered coding assistant that provides intelligent, adaptive code assistance through comprehensive LLM support. With support for 20+ providers including official SDK integrations, vector-based semantic search, and robust MCP integration, CodeForge delivers enterprise-grade AI assistance for developers.
 
-### � Key Highlights
+### Key Highlights
 
-- **🤖 300+ AI Models**: Access to models from Anthropic, OpenAI, Google, OpenRouter, and 50+ providers
-- **⚡ 99% Performance Improvement**: Smart database caching reduces model sync from minutes to seconds
-- **�️ Production Database**: LibSQL vector database with automatic TTL enforcement
-- **🌐 Multiple Interfaces**: CLI and Model Context Protocol (MCP) support
-- **� Semantic Search**: Vector-based code search with multi-dimensional embeddings
-- **🏗️ Graph-Based Analysis**: Comprehensive codebase relationship mapping
+- **20+ AI Providers**: Official SDK integrations for Anthropic, OpenAI, Google, AWS, plus OpenRouter with 300+ models
+- **Production-Ready Performance**: Thread-safe operations with multi-level caching and background processing
+- **Vector Database**: LibSQL-based semantic search with 256-1536 dimension embeddings
+- **Multiple Interfaces**: CLI, API server, web interface, and Model Context Protocol (MCP) support
+- **Semantic Search**: Vector-based code search with intelligent context selection
+- **Code Intelligence**: Graph-based codebase awareness with LSP and tree-sitter integration
 
-## � Quick Start
+## Quick Start
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/codeforge.git
+git clone https://github.com/entrepreneur4lyf/codeforge.git
 cd codeforge
 
 # Build CodeForge CLI
@@ -46,9 +46,9 @@ go build -o codeforge ./cmd/codeforge
 go build -o codeforge-api ./cmd/codeforge-api
 
 # Set up your API keys (optional - many features work without keys)
-export OPENROUTER_API_KEY="your-key-here"
-export ANTHROPIC_API_KEY="your-key-here"
-export OPENAI_API_KEY="your-key-here"
+export OPENROUTER_API_KEY="[REDACTED:api-key]"
+export ANTHROPIC_API_KEY="[REDACTED:api-key]"
+export OPENAI_API_KEY="[REDACTED:api-key]"
 ```
 
 ### Basic Usage
@@ -79,79 +79,92 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -d '{"value":"sk-ant-key"}' \
   http://localhost:47000/api/v1/environment/ANTHROPIC_API_KEY  # Set API key
 ```
 
-## 🌟 Core Features
+## Core Features
 
-### 🤖 AI-Powered Coding Assistant
-- **Multi-Provider LLM Support**: 25+ providers including Anthropic, OpenAI, Gemini, OpenRouter, Groq
-- **Interactive Chat Interface**: Real-time streaming responses with conversation history
-- **Direct Prompt Mode**: Single command execution with piped input support
-- **Model Selection**: Dynamic model switching with provider-specific optimizations
-- **API Key Management**: Automatic provider detection and fallback mechanisms
+### AI-Powered Coding Assistant
+- **Multi-Provider LLM Support**: 20+ providers with official SDK integrations (Anthropic, OpenAI, Google, AWS, OpenRouter, Groq, etc.)
+- **Interactive Chat Interface**: Real-time streaming responses with conversation history via CLI and web interface
+- **Direct Prompt Mode**: Single command execution with piped input support (`echo "question" | codeforge`)
+- **Model Selection**: Interactive TUI model selector with favorites and provider filtering
+- **API Key Management**: Environment variable-based configuration with automatic provider detection
 
-### 🧠 Advanced Code Intelligence
-- **Semantic Code Search**: Vector-based similarity search with embedding generation
-- **Symbol Extraction**: LSP-enhanced symbol analysis with fallback parsing
-- **AST-Based Analysis**: Tree-sitter integration for precise code structure analysis
-- **Code Chunking**: Multiple strategies (function, class, file, semantic, text-based)
-- **Documentation Extraction**: Automatic extraction of comments and docstrings
+### Advanced Code Intelligence
+- **Semantic Code Search**: Vector-based similarity search using embeddings (Ollama/OpenAI/fallback)
+- **Symbol Extraction**: LSP-enhanced symbol analysis with tree-sitter fallback parsing
+- **AST-Based Analysis**: Tree-sitter integration for Go, Rust, Python, JavaScript/TypeScript, Java, C/C++, PHP
+- **Code Chunking**: Multiple strategies (tree-sitter, function, class, file, text-based) with language-specific parsers
+- **Documentation Extraction**: Automatic extraction of comments, docstrings, and code metadata
 
-### 🔧 Development Tools
-- **Project Building**: Automated build system with error detection
-- **LSP Integration**: Full Language Server Protocol support with multi-language clients
-- **File Management**: Read/write operations with workspace awareness
-- **Git Integration**: Repository status and change tracking
-- **Error Pattern Recognition**: Learning from build failures and fixes
+### Development Tools
+- **Project Analysis**: Automatic project overview generation and AGENT.md creation
+- **LSP Integration**: Language Server Protocol support with multi-language client management
+- **File Management**: Read/write operations with workspace awareness and encoding detection
+- **Git Integration**: Repository status tracking and change detection
+- **Build System**: Project building with error detection and pattern learning
 
-### 🗄️ Smart Codebase RAG
-- **LibSQL Vector Integration**: Production-ready vector operations with native indexing
-- **Multi-Dimensional Embeddings**: Support for 384-1536+ dimension vectors with optimized storage
+### Smart Codebase RAG
+- **LibSQL Vector Integration**: Production-ready vector operations with JSON-based similarity search fallback
+- **Multi-Dimensional Embeddings**: Support for 256-1536 dimension vectors (Ollama nomic-embed-text, OpenAI, hash fallback)
+- **Hybrid Search**: Graph-based codebase awareness combined with vector similarity search
+- **Intelligent Context**: Smart context selection for LLM interactions with relevance scoring
 
-### 🌐 Multi-Provider LLM Support
+### Multi-Provider LLM Support
 
-#### 🏢 Enterprise Providers
-- **Anthropic**: Claude models with prompt caching and thinking modes
-- **OpenAI**: GPT models with Azure support and O1/O3 reasoning
-- **Google**: Gemini models with Vertex AI integration
-- **AWS Bedrock**: Enterprise-grade model access
-- **Azure OpenAI**: Microsoft cloud integration
+#### Enterprise Providers (Implemented)
+- **Anthropic**: Claude models with official SDK integration (anthropic-sdk-go)
+- **OpenAI**: GPT models with official SDK integration (openai-go)
+- **Google**: Gemini models with official SDK integration (google.golang.org/genai)
+- **AWS Bedrock**: Enterprise-grade model access with AWS SDK v2
+- **Azure OpenAI**: Microsoft cloud integration via OpenAI SDK
 
-#### ⚡ Performance Providers
-- **Groq**: Ultra-fast inference with specialized hardware
-- **Together AI**: Optimized model serving
-- **Fireworks AI**: High-performance model hosting
-- **Cerebras**: AI supercomputer integration
-- **DeepSeek**: Advanced reasoning capabilities
+#### Performance Providers (Implemented)
+- **Groq**: Ultra-fast inference with API integration
+- **Together AI**: Optimized model serving via API
+- **Fireworks AI**: High-performance model hosting via API
+- **Cerebras**: AI supercomputer integration via API
+- **DeepSeek**: Advanced reasoning capabilities via API
 
-#### 🌐 Multi-Provider Platforms
-- **OpenRouter**: 300+ models with smart database caching and comprehensive metadata
-- **LiteLLM**: Universal API compatibility
-- **Ollama**: Local model execution
-- **LM Studio**: Local model management
+#### Multi-Provider Platforms (Implemented)
+- **OpenRouter**: 300+ models with official SDK integration and smart database caching
+- **LiteLLM**: Universal API compatibility with OpenAI-compatible interface
+- **Ollama**: Local model execution with embedding support (nomic-embed-text)
+- **LM Studio**: Local model management via API
 
-### 🌍 Model Context Protocol (MCP)
+#### Additional Providers (Implemented)
+- **xAI (Grok)**: Advanced reasoning via API integration
+- **Mistral**: European AI with API integration
+- **Cohere**: Enterprise AI platform via API
+- **Perplexity**: Search-augmented AI via API
 
-#### 🔧 MCP Tools
-- **semantic_search**: Advanced semantic code search with vector similarity
-- **read_file**: Workspace file reading with encoding detection
-- **write_file**: Safe file writing with backup and validation
-- **analyze_code**: Comprehensive code analysis with symbol extraction
-- **get_project_structure**: Intelligent project structure mapping
+### Model Context Protocol (MCP)
 
-#### 📚 MCP Resources
-- **codeforge://project/metadata**: Project information and statistics
-- **codeforge://files/{path}**: Direct file content access
-- **codeforge://git/status**: Git repository status and changes
+#### MCP Tools (Fully Implemented)
+- **semantic_search**: Vector-based semantic code search with embedding generation and similarity ranking
+- **read_file**: Workspace file reading with encoding detection and path validation
+- **write_file**: Safe file writing with backup creation and content validation
+- **analyze_code**: Comprehensive code analysis with LSP symbol extraction and tree-sitter parsing
+- **get_project_structure**: Directory tree generation with configurable depth limits
 
-#### 💡 MCP Prompts
-- **code_review**: Automated code review assistance
-- **debug_help**: Intelligent debugging guidance
-- **refactoring_guide**: Refactoring recommendations
-- **documentation_help**: Documentation generation assistance
-- **testing_help**: Test creation and improvement suggestions
+#### MCP Resources (Fully Implemented)
+- **codeforge://project/metadata**: Project information including workspace root, version, and description
+- **codeforge://files/{path}**: Direct file content access with MIME type detection
+- **codeforge://git/status**: Git repository status and change tracking
 
-### 🛠️ Language Support
+#### MCP Prompts (Fully Implemented)
+- **code_review**: Structured code review assistance with embedded file resources
+- **debug_help**: Debugging guidance with context-aware suggestions
+- **refactoring_guide**: Refactoring recommendations with step-by-step plans
+- **documentation_help**: Documentation generation with usage examples
+- **testing_help**: Test creation assistance with coverage recommendations
 
-#### 📝 Fully Supported Languages
+#### MCP Server Features
+- **Multiple Transports**: stdio, HTTP, and Server-Sent Events (SSE) support
+- **Permission System**: Permission-aware MCP server with session management and audit logging
+- **Standalone Operation**: Independent MCP server (`codeforge mcp server`) or integrated mode
+
+### Language Support
+
+#### Fully Supported Languages
 - **Go**: Complete LSP integration, symbol extraction, and chunking
 - **Rust**: Advanced parsing with tree-sitter integration
 - **Python**: Comprehensive analysis with docstring extraction
@@ -160,37 +173,38 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -d '{"value":"sk-ant-key"}' \
 - **C/C++**: System programming language support
 - **PHP**: Web development language support
 
-#### 🔧 Additional Language Features
+#### Additional Language Features
 - **Tree-Sitter Integration**: AST-based parsing for precise analysis
 - **Language Detection**: Automatic language identification
 - **Syntax Highlighting**: Rich syntax highlighting in web interface
 - **LSP Client Management**: Per-language LSP server integration
 
-### 🌐 Web API & Interface
+### Web API & Interface
 
-#### � RESTful API (Port 47000)
-- **Complete Provider Management**: Configure all 25+ LLM providers via API
+#### RESTful API (Port 47000) - Fully Implemented
+- **Complete Provider Management**: Configure all 20+ LLM providers via API
 - **Environment Variable Control**: Full CRUD operations for API keys and settings
-- **Enhanced Edit/Delete**: Detailed feedback, validation, and security protection
+- **Authentication System**: Token-based authentication with session management
 - **Real-time Chat**: WebSocket-based chat with streaming responses
 - **Server-Sent Events**: Live metrics and status updates
 - **Project Management**: File browsing, search, and code analysis
 
-#### 🔐 Secure Localhost Authentication
-- **Session-Based Security**: Cryptographically secure tokens with salt protection
-- **Session Hijacking Prevention**: IP + User-Agent binding with multi-factor validation
-- **No TLS Required**: Enterprise-grade security for localhost development
+#### Secure Localhost Authentication - Implemented
+- **Session-Based Security**: Cryptographically secure tokens with session management
+- **Permission System**: Session-based permission management with audit logging
+- **No TLS Required**: Secure localhost development without certificate complexity
 - **Bearer Token Authentication**: Standard OAuth-style authentication flow
 
-#### 🎨 Web Interface (Ready for Development)
+#### Web Interface - Implemented
+- **TUI-Style Interface**: Terminal-inspired web interface with dark theme and monospace fonts
+- **File Browser**: Interactive file system navigation with project structure display
+- **Code Editor**: Syntax highlighting with language detection and file content loading
+- **Chat Interface**: Real-time AI conversation with message history and streaming responses
 - **Complete API Coverage**: All CodeForge features accessible via REST API
-- **WebSocket Support**: Real-time communication for chat and updates
-- **Provider Configuration**: Web-based setup for all LLM providers
-- **Security Model**: Localhost-only access with enhanced authentication
 
-## 📋 Command Line Interface
+## Command Line Interface
 
-### 🎯 Available Commands
+### Available Commands
 
 **Core Commands:**
 ```bash
@@ -213,7 +227,7 @@ codeforge-api --port 8080        # Start on custom port
 codeforge-api --debug            # Enable debug mode
 ```
 
-### 🚀 Advanced Usage Examples
+### Advanced Usage Examples
 
 ```bash
 # Interactive mode with codebase awareness
@@ -245,75 +259,70 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
   http://localhost:47000/api/v1/environment/OPENAI_API_KEY
 ```
 
-## ⚙️ Configuration & Deployment
+## Configuration & Deployment
 
-### 📋 Configuration Management
-- **YAML Configuration**: Comprehensive configuration system
-- **Environment Variables**: Flexible deployment options
-- **Provider Settings**: Per-provider configuration and optimization
-- **Workspace Management**: Multi-workspace support
-- **State Persistence**: Configuration and state management
+### Configuration Management (Implemented)
+- **Environment Variables**: API key management via environment variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
+- **Provider Settings**: Per-provider configuration with rate limiting, cost management, and health monitoring
+- **Workspace Management**: Single workspace support with automatic project detection
+- **Database Configuration**: SQLite-based configuration and state persistence
 
-### 🚀 Deployment Options
-- **Standalone CLI**: Direct command-line usage
-- **MCP Server**: Model Context Protocol server mode
-- **API Server**: RESTful API with WebSocket support (port 47000)
-- **Multi-Transport**: stdio transport for MCP integration
-- **Web Interface Ready**: Complete API for building web UIs
+### Deployment Options (Implemented)
+- **Standalone CLI**: Direct command-line usage with interactive and direct prompt modes
+- **MCP Server**: Model Context Protocol server with stdio, HTTP, and SSE transport options
+- **API Server**: Full REST API with authentication and WebSocket support (`codeforge-api`)
+- **Web Interface**: Built-in web server with TUI-style interface
+- **Multiple Binaries**: Separate binaries for CLI (`codeforge`) and API server (`codeforge-api`)
 
-### 🔒 Security & Performance
+### Security & Performance
 
-#### 🛡️ Security Features
-- **Enhanced Localhost Authentication**: Session-based security with salt protection
-- **Session Hijacking Prevention**: Multi-factor validation (IP + User-Agent + Salt)
-- **API Key Management**: Secure credential handling with masked display
-- **Environment Variable Control**: Full CRUD with validation and critical variable protection
-- **Enhanced Edit/Delete Operations**: Detailed feedback and security validation
-- **Workspace Isolation**: Sandboxed workspace operations
-- **Input Validation**: Comprehensive input sanitization
+#### Security Features (Implemented)
+- **API Key Management**: Environment variable-based secure credential handling
+- **Workspace Isolation**: Path validation and workspace-relative file operations
+- **Input Validation**: Comprehensive input sanitization and path validation
+- **Permission System**: Session-based permission management with audit logging
+- **Authentication**: Token-based authentication for API access with session management
 - **Error Handling**: Graceful error recovery and reporting
 
-#### ⚡ Performance Optimizations
-- **Smart Database Caching**: Two-table architecture with automatic cleanup triggers
-- **Efficient Model Sync**: (318 models in seconds)
-- **On-Demand Loading**: Comprehensive metadata fetched only when needed
-- **Multi-Level Caching**: Database, memory, and API response caching
-- **Concurrent Processing**: Thread-safe operations throughout
-- **Memory Management**: Efficient memory usage and cleanup
-- **Background Processing**: Non-blocking operations where possible
-- **Performance Monitoring**: Built-in performance metrics and logging
+#### Performance Optimizations (Implemented)
+- **Database Caching**: SQLite-based caching with thread-safe operations using sync.Map
+- **Background Processing**: Asynchronous model discovery and embedding generation
+- **Concurrent Processing**: Thread-safe operations throughout with proper mutex usage
+- **Memory Management**: Efficient memory usage with proper resource cleanup
+- **Graceful Degradation**: Fallback mechanisms for all major features (embeddings, LSP, etc.)
+- **Performance Monitoring**: Built-in timing and metrics (hidden from user interface)
 
-## 🎯 Implementation Status
+## Implementation Status
 
-### ✅ **Fully Implemented**
+### **Fully Implemented**
 - **CLI Interface**: Complete command-line interface with interactive and direct modes
-- **MCP Server**: Full Model Context Protocol server implementation
+- **MCP Server**: Full Model Context Protocol server with 5 tools, 3 resources, and 5 prompts
 - **RESTful API**: Complete API server with WebSocket and SSE support (port 47000)
-- **Secure Authentication**: Enhanced localhost authentication with salt protection
-- **Provider Management**: Complete API control of all 25+ LLM providers
+- **Web Interface**: TUI-style web interface with file browser, code editor, and chat
+- **Authentication**: Token-based authentication with session management
+- **Provider Management**: Complete API control of all 20+ LLM providers with official SDKs
 - **Environment Variables**: Full CRUD operations with validation and security protection
-- **OpenRouter Integration**: 300+ models with smart database caching and TTL enforcement
-- **Multi-Provider LLM Support**: 25+ providers with automatic fallback
-- **Vector Database**: LibSQL integration with semantic search
-- **Code Intelligence**: Symbol extraction, chunking, and analysis
+- **Multi-Provider LLM Support**: 20+ providers with automatic fallback and official SDK integrations
+- **Vector Database**: LibSQL integration with semantic search and embedding generation
+- **Code Intelligence**: Symbol extraction, chunking, and analysis with LSP and tree-sitter
 - **Language Support**: Go, Rust, Python, JavaScript, TypeScript, Java, C++, PHP
 
-### 🚧 **In Development**
-- **Web Interface**: Modern web UI (API foundation complete)
+### **In Development**
 - **Additional Providers**: More LLM provider integrations
+- **Enhanced Web Features**: Advanced web UI capabilities
 
-### 🔮 **Planned Features**
+### **Planned Features**
 - **Docker Support**: Containerized deployment
 - **Plugin System**: Extensible architecture
 - **Team Collaboration**: Multi-user workspace support
 
-## 🤝 Contributing
+## Contributing
 
 CodeForge is built for the developer community. We welcome contributions!
 
-### 🛠️ Development Setup
+### Development Setup
 ```bash
-git clone https://github.com/your-org/codeforge.git
+git clone https://github.com/entrepeneur4lyf/codeforge.git
 cd codeforge
 go mod download
 
@@ -324,17 +333,17 @@ go build -o codeforge ./cmd/codeforge
 go build -o codeforge-api ./cmd/codeforge-api
 ```
 
-### 📋 Areas for Contribution
-- **Web Interface Development**: Build modern web UI using the complete API
+### Areas for Contribution
+- **Web Interface Development**: Enhance the TUI-style web interface with additional features
 - **Provider Integrations**: Add support for new LLM providers
-- **Language Support**: Extend language analysis capabilities
-- **ML Algorithms**: Enhance machine learning features
+- **Language Support**: Extend language analysis capabilities and tree-sitter integration
+- **Code Intelligence**: Enhance semantic search and context generation algorithms
 - **API Enhancements**: Extend the RESTful API capabilities
 - **Environment Management**: Enhance variable validation and security features
 - **Security Features**: Enhance authentication and authorization
 - **Documentation**: Improve docs and examples
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
@@ -342,8 +351,8 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-**CodeForge: Where AI meets intelligent code understanding** 🚀🧠
+**CodeForge: Where AI meets intelligent code understanding**
 
-*Built with ❤️ for the developer community*
+*Built with love for the developer community*
 
 </div>
