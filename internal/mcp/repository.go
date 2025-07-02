@@ -130,11 +130,11 @@ func (rf *RepositoryFetcher) extractSections(content string) map[string]string {
 
 	// Common section patterns in MCP servers README
 	sectionPatterns := map[string]*regexp.Regexp{
-		"Official":    regexp.MustCompile(`(?s)## Official.*?(?=##|$)`),
-		"Reference":   regexp.MustCompile(`(?s)## Reference.*?(?=##|$)`),
-		"Third-party": regexp.MustCompile(`(?s)## Third-party.*?(?=##|$)`),
-		"Community":   regexp.MustCompile(`(?s)## Community.*?(?=##|$)`),
-		"Frameworks":  regexp.MustCompile(`(?s)## Frameworks.*?(?=##|$)`),
+		"Official":    regexp.MustCompile(`(?s)## Official.*?(?:##|$)`),
+		"Reference":   regexp.MustCompile(`(?s)## Reference.*?(?:##|$)`),
+		"Third-party": regexp.MustCompile(`(?s)## Third-party.*?(?:##|$)`),
+		"Community":   regexp.MustCompile(`(?s)## Community.*?(?:##|$)`),
+		"Frameworks":  regexp.MustCompile(`(?s)## Frameworks.*?(?:##|$)`),
 	}
 
 	for category, pattern := range sectionPatterns {
@@ -327,7 +327,7 @@ func (rf *RepositoryFetcher) extractTags(description string) []string {
 
 // isCacheValid checks if the cached data is still valid
 func (rf *RepositoryFetcher) isCacheValid() bool {
-	if rf.cachedData == nil || len(rf.cachedData) == 0 {
+	if len(rf.cachedData) == 0 {
 		return false
 	}
 	return time.Since(rf.lastFetched) < rf.cacheDuration

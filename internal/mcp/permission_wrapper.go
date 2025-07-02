@@ -21,7 +21,7 @@ type PermissionAwareMCPServer struct {
 func NewPermissionAwareMCPServer(cfs *CodeForgeServer, permService *permissions.PermissionService) *PermissionAwareMCPServer {
 	toolChecker := permissions.NewToolPermissionChecker(permService)
 	pathValidator := permissions.NewPathValidator(cfs.workspaceRoot)
-	
+
 	// Configure path validator with safe defaults
 	pathValidator.AddAllowedPath(cfs.workspaceRoot + "/*")
 	pathValidator.AddDeniedPath("/etc/*")
@@ -50,26 +50,26 @@ type SessionContext struct {
 func (pms *PermissionAwareMCPServer) getSessionFromContext(ctx context.Context) *SessionContext {
 	// Try to extract session information from context
 	// This would be set by the calling application
-	if sessionID, ok := ctx.Value("session_id").(string); ok {
+	if sessionID, ok := ctx.Value(sessionIDKey).(string); ok {
 		session := &SessionContext{
 			SessionID: sessionID,
 		}
-		
-		if userID, ok := ctx.Value("user_id").(string); ok {
+
+		if userID, ok := ctx.Value(userIDKey).(string); ok {
 			session.UserID = userID
 		}
-		
-		if ipAddr, ok := ctx.Value("ip_address").(string); ok {
+
+		if ipAddr, ok := ctx.Value(ipAddressKey).(string); ok {
 			session.IPAddress = ipAddr
 		}
-		
-		if userAgent, ok := ctx.Value("user_agent").(string); ok {
+
+		if userAgent, ok := ctx.Value(userAgentKey).(string); ok {
 			session.UserAgent = userAgent
 		}
-		
+
 		return session
 	}
-	
+
 	// Default session if no context available
 	return &SessionContext{
 		SessionID: "default",
@@ -80,7 +80,7 @@ func (pms *PermissionAwareMCPServer) getSessionFromContext(ctx context.Context) 
 // checkToolPermission checks if a tool operation is permitted
 func (pms *PermissionAwareMCPServer) checkToolPermission(ctx context.Context, toolName string, args map[string]interface{}) (*permissions.PermissionCheckResult, error) {
 	session := pms.getSessionFromContext(ctx)
-	
+
 	// Create tool permission request
 	toolReq := &permissions.ToolPermissionRequest{
 		SessionID:  session.SessionID,
@@ -181,7 +181,7 @@ func (pms *PermissionAwareMCPServer) HandleWriteFileWithPermissions(ctx context.
 
 	// Check for high-risk operations
 	if pathResult.RiskLevel >= 8 {
-		log.Printf("High-risk file write operation for session %s, path: %s, risk: %d", 
+		log.Printf("High-risk file write operation for session %s, path: %s, risk: %d",
 			session.SessionID, path, pathResult.RiskLevel)
 	}
 
@@ -307,7 +307,7 @@ func (pms *PermissionAwareMCPServer) HandleSemanticSearchWithPermissions(ctx con
 // RegisterPermissionAwareTools registers all tools with permission checking
 func (pms *PermissionAwareMCPServer) RegisterPermissionAwareTools() {
 	// Replace the original tool handlers with permission-aware versions
-	
+
 	// Semantic search tool
 	semanticSearchTool := mcp.NewTool("semantic_search",
 		mcp.WithDescription("Search for code using semantic similarity (requires permission)"),
@@ -385,11 +385,21 @@ func (pms *PermissionAwareMCPServer) GetPathValidator() *permissions.PathValidat
 	return pms.pathValidator
 }
 
+// Context key types to avoid collisions
+type contextKey string
+
+const (
+	sessionIDKey contextKey = contextKey("session_id")
+	userIDKey    contextKey = contextKey("user_id")
+	ipAddressKey contextKey = contextKey("ip_address")
+	userAgentKey contextKey = contextKey("user_agent")
+)
+
 // UpdateSessionContext updates the session context in the request context
 func UpdateSessionContext(ctx context.Context, sessionID, userID, ipAddress, userAgent string) context.Context {
-	ctx = context.WithValue(ctx, "session_id", sessionID)
-	ctx = context.WithValue(ctx, "user_id", userID)
-	ctx = context.WithValue(ctx, "ip_address", ipAddress)
-	ctx = context.WithValue(ctx, "user_agent", userAgent)
+	ctx = context.WithValue(ctx, sessionIDKey, sessionID)
+	ctx = context.WithValue(ctx, userIDKey, userID)
+	ctx = context.WithValue(ctx, ipAddressKey, ipAddress)
+	ctx = context.WithValue(ctx, userAgentKey, userAgent)
 	return ctx
 }
