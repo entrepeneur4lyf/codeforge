@@ -300,6 +300,7 @@ func (s *Server) setupRoutes() *mux.Router {
 	protected.HandleFunc("/chat/sessions", s.handleChatSessions).Methods("GET", "POST")
 	protected.HandleFunc("/chat/sessions/{id}", s.handleChatSession).Methods("GET", "DELETE")
 	protected.HandleFunc("/chat/sessions/{id}/messages", s.handleChatMessages).Methods("GET", "POST")
+	protected.HandleFunc("/chat/sessions/{sessionID}/messages/enhanced", s.sendChatMessageEnhanced).Methods("POST")
 
 	// WebSocket for real-time chat (protected via token in URL)
 	protected.HandleFunc("/chat/ws/{sessionId}", s.handleChatWebSocket)

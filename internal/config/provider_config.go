@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -464,19 +466,79 @@ func (pm *ProviderManager) getDefaultProviderConfig(providerID models.ModelProvi
 	}
 }
 
-// selectRoundRobin selects provider using round-robin strategy
+// selectRoundRobin selects provider using thread-safe round-robin strategy
 func (pm *ProviderManager) selectRoundRobin(providers []models.ModelProvider) models.ModelProvider {
 	if len(providers) == 0 {
 		return ""
 	}
 
-	// Simple round-robin implementation
-	provider := providers[0]
-	counter := pm.roundRobinCounters[provider]
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	// Create a stable key for this provider set to maintain consistent round-robin state
+	providerKey := pm.createProviderSetKey(providers)
+
+	// Get or initialize counter for this provider set
+	counter, exists := pm.roundRobinCounters[providerKey]
+	if !exists {
+		counter = 0
+	}
+
+	// Select provider using round-robin
 	selected := providers[counter%len(providers)]
-	pm.roundRobinCounters[provider] = counter + 1
+
+	// Update counter for next selection
+	pm.roundRobinCounters[providerKey] = (counter + 1) % len(providers)
+
+	// Track selection for load balancing metrics
+	pm.recordProviderSelection(selected, "round_robin")
 
 	return selected
+}
+
+// createProviderSetKey creates a stable key for a set of providers
+func (pm *ProviderManager) createProviderSetKey(providers []models.ModelProvider) models.ModelProvider {
+	if len(providers) == 1 {
+		return providers[0]
+	}
+
+	// Sort providers to create consistent key regardless of input order
+	sorted := make([]string, len(providers))
+	for i, p := range providers {
+		sorted[i] = string(p)
+	}
+	sort.Strings(sorted)
+
+	// Create composite key
+	return models.ModelProvider(strings.Join(sorted, "|"))
+}
+
+// recordProviderSelection records provider selection for metrics and load balancing
+func (pm *ProviderManager) recordProviderSelection(provider models.ModelProvider, strategy string) {
+	now := time.Now()
+
+	// Update selection count
+	if pm.selectionCounts == nil {
+		pm.selectionCounts = make(map[models.ModelProvider]int)
+	}
+	pm.selectionCounts[provider]++
+
+	// Record selection history for analysis
+	selection := ProviderSelection{
+		Provider:  provider,
+		Strategy:  strategy,
+		Timestamp: now,
+	}
+
+	// Keep only recent selections (last 1000)
+	if pm.selectionHistory == nil {
+		pm.selectionHistory = make([]ProviderSelection, 0, 1000)
+	}
+
+	pm.selectionHistory = append(pm.selectionHistory, selection)
+	if len(pm.selectionHistory) > 1000 {
+		pm.selectionHistory = pm.selectionHistory[1:]
+	}
 }
 
 // selectLeastLatency selects provider with lowest latency

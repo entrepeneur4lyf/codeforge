@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/chat"
+	"github.com/entrepeneur4lyf/codeforge/internal/markdown"
 	"github.com/gorilla/mux"
 )
 
@@ -29,6 +30,17 @@ type ChatMessage struct {
 	SessionID string                 `json:"session_id"`
 	Role      string                 `json:"role"` // "user", "assistant", "system"
 	Content   string                 `json:"content"`
+	Timestamp time.Time              `json:"timestamp"`
+	Model     string                 `json:"model,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// EnhancedChatMessage represents a chat message with multiple format support
+type EnhancedChatMessage struct {
+	ID        string                 `json:"id"`
+	SessionID string                 `json:"session_id"`
+	Role      string                 `json:"role"`
+	Content   map[string]string      `json:"content"` // Format -> rendered content
 	Timestamp time.Time              `json:"timestamp"`
 	Model     string                 `json:"model,omitempty"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
@@ -361,9 +373,141 @@ func (s *Server) sendChatMessage(w http.ResponseWriter, r *http.Request, session
 	s.writeJSON(w, assistantMessage)
 }
 
+// sendChatMessageEnhanced handles enhanced chat messages with markdown support
+func (s *Server) sendChatMessageEnhanced(w http.ResponseWriter, r *http.Request) {
+	var req ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Message == "" {
+		s.writeError(w, "Message is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get session ID from URL
+	vars := mux.Vars(r)
+	sessionID := vars["sessionID"]
+
+	// Get or create session
+	session, exists := s.chatStorage.GetSession(sessionID)
+	if !exists {
+		// Create new session using CreateSession method
+		session = s.chatStorage.CreateSession("Enhanced Chat Session")
+		session.ID = sessionID // Override the generated ID
+		session.Model = req.Model
+		session.Provider = req.Provider
+	}
+
+	// Store user message
+	userMessage := ChatMessage{
+		ID:        generateMessageID(),
+		SessionID: sessionID,
+		Role:      "user",
+		Content:   req.Message,
+		Timestamp: time.Now(),
+		Model:     req.Model,
+		Metadata:  req.Context,
+	}
+	s.chatStorage.AddMessage(sessionID, userMessage)
+
+	// Process with AI (using CodeForge app integration)
+	var responseContent string
+	if s.app != nil {
+		ctx := r.Context()
+		modelID := req.Model
+		if modelID == "" {
+			modelID = session.Model
+		}
+		if modelID == "" {
+			modelID = "default"
+		}
+
+		response, err := s.app.ProcessChatMessage(ctx, sessionID, req.Message, modelID)
+		if err != nil {
+			log.Printf("Chat processing error: %v", err)
+			s.writeError(w, "Failed to process message", http.StatusInternalServerError)
+			return
+		}
+		responseContent = response
+	} else {
+		responseContent = "Chat processing is not available - app not initialized"
+	}
+
+	// Process response with markdown support
+	enhancedResponse, err := s.processMessageWithMarkdown(responseContent, sessionID, req.Model)
+	if err != nil {
+		log.Printf("Markdown processing error: %v", err)
+		// Fallback to regular response
+		assistantMessage := ChatMessage{
+			ID:        generateMessageID(),
+			SessionID: sessionID,
+			Role:      "assistant",
+			Content:   responseContent,
+			Timestamp: time.Now(),
+			Model:     req.Model,
+			Metadata: map[string]interface{}{
+				"markdown": false,
+				"via":      "rest_api",
+			},
+		}
+		s.chatStorage.AddMessage(sessionID, assistantMessage)
+		s.writeJSON(w, assistantMessage)
+		return
+	}
+
+	// Convert enhanced message to regular message for storage
+	assistantMessage := ChatMessage{
+		ID:        enhancedResponse.ID,
+		SessionID: enhancedResponse.SessionID,
+		Role:      enhancedResponse.Role,
+		Content:   enhancedResponse.Content["plain"], // Store plain text version
+		Timestamp: enhancedResponse.Timestamp,
+		Model:     enhancedResponse.Model,
+		Metadata:  enhancedResponse.Metadata,
+	}
+	s.chatStorage.AddMessage(sessionID, assistantMessage)
+
+	// Return enhanced response with all formats
+	s.writeJSON(w, enhancedResponse)
+}
+
 // generateSessionID generates a unique session ID
 func generateSessionID() string {
 	return "session-" + time.Now().Format("20060102-150405")
+}
+
+// processMessageWithMarkdown processes a chat message with markdown support
+func (s *Server) processMessageWithMarkdown(content string, sessionID string, model string) (*EnhancedChatMessage, error) {
+	// Create markdown processor
+	processor, err := markdown.NewMessageProcessor()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create markdown processor: %w", err)
+	}
+
+	// Process the content into multiple formats
+	processedContent, err := processor.ProcessMessage(content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process markdown: %w", err)
+	}
+
+	// Create enhanced chat message
+	response := &EnhancedChatMessage{
+		ID:        generateMessageID(),
+		SessionID: sessionID,
+		Role:      "assistant",
+		Content:   processedContent,
+		Timestamp: time.Now(),
+		Model:     model,
+		Metadata: map[string]interface{}{
+			"markdown":          true,
+			"available_formats": []string{"plain", "markdown", "terminal", "html"},
+			"via":               "rest_api",
+		},
+	}
+
+	return response, nil
 }
 
 // generateMessageID generates a unique message ID

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/events"
+	"github.com/entrepeneur4lyf/codeforge/internal/markdown"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
@@ -165,7 +166,7 @@ func (c *ChatWebSocketClient) handleChatMessage(msg WebSocketMessage) {
 	go c.processMessage(message, msg.EventID)
 }
 
-// processMessage handles AI response generation
+// processMessage handles AI response generation with markdown support
 func (c *ChatWebSocketClient) processMessage(message string, eventID string) {
 	// Send typing indicator
 	c.sendMessage(WebSocketMessage{
@@ -206,24 +207,30 @@ func (c *ChatWebSocketClient) processMessage(message string, eventID string) {
 		responseContent = "Chat processing is not available - app not initialized"
 	}
 
-	// Create assistant response
-	response := ChatMessage{
-		ID:        generateMessageID(),
-		SessionID: c.sessionID,
-		Role:      "assistant",
-		Content:   responseContent,
-		Timestamp: time.Now(),
-		Metadata: map[string]interface{}{
-			"model":    session.Model,
-			"provider": session.Provider,
-			"via":      "websocket",
-		},
+	// Process response with markdown support
+	processedResponse, err := c.processResponseWithMarkdown(responseContent, session)
+	if err != nil {
+		log.Printf("Markdown processing error: %v", err)
+		// Fallback to basic response
+		processedResponse = &ChatMessage{
+			ID:        generateMessageID(),
+			SessionID: c.sessionID,
+			Role:      "assistant",
+			Content:   responseContent,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"model":    session.Model,
+				"provider": session.Provider,
+				"via":      "websocket",
+				"markdown": false,
+			},
+		}
 	}
 
 	c.sendMessage(WebSocketMessage{
 		Type:    "chat_response",
 		EventID: eventID,
-		Data:    response,
+		Data:    processedResponse,
 	})
 
 	// Stop typing indicator
@@ -233,6 +240,40 @@ func (c *ChatWebSocketClient) processMessage(message string, eventID string) {
 			"typing": false,
 		},
 	})
+}
+
+// processResponseWithMarkdown processes the AI response with markdown support
+func (c *ChatWebSocketClient) processResponseWithMarkdown(content string, session *ChatSession) (*ChatMessage, error) {
+	// Create markdown processor
+	processor, err := markdown.NewMessageProcessor()
+	if err != nil {
+		return nil, err
+	}
+
+	// Process the content into multiple formats
+	processedContent, err := processor.ProcessMessage(content)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create enhanced chat message with multiple format support
+	response := &ChatMessage{
+		ID:        generateMessageID(),
+		SessionID: c.sessionID,
+		Role:      "assistant",
+		Content:   processedContent[string(markdown.FormatPlain)], // Default to plain for compatibility
+		Timestamp: time.Now(),
+		Metadata: map[string]interface{}{
+			"model":             session.Model,
+			"provider":          session.Provider,
+			"via":               "websocket",
+			"markdown":          true,
+			"available_formats": []string{"plain", "markdown", "terminal", "html"},
+			"formats":           processedContent,
+		},
+	}
+
+	return response, nil
 }
 
 // handleTypingStart handles typing start events

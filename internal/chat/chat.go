@@ -285,7 +285,7 @@ func (cs *ChatSession) StartInteractive() error {
 		fmt.Println()
 
 		// Send initial greeting to model to get "What can I do for you today?" response
-		_, err := cs.ProcessMessage("Hello")
+		_, err := cs.ProcessMessage("Say 'What can I do for you today?' and nothing else.")
 		if err != nil {
 			fmt.Printf("Error getting initial response: %v\n", err)
 			// Continue anyway

@@ -41,9 +41,10 @@ func BuildApiHandler(options llm.ApiHandlerOptions) (llm.ApiHandler, error) {
 	case llm.ProviderOpenRouter:
 		handler = NewOpenRouterSDKHandler(options)
 	case llm.ProviderBedrock:
-		handler = NewBedrockHandler(options)
+		handler = NewBedrockSDKHandler(options)
 	case llm.ProviderVertex:
-		handler = NewVertexHandler(options)
+		// Use the enhanced Gemini SDK handler for Vertex AI
+		handler = NewGeminiSDKHandler(options)
 	case llm.ProviderDeepSeek:
 		handler = NewDeepSeekHandler(options)
 	case llm.ProviderTogether:

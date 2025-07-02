@@ -31,6 +31,7 @@ type App struct {
 	PermissionStorage    *permissions.PermissionStorage
 	FileOperationManager *permissions.FileOperationManager
 	MCPServer            *mcp.PermissionAwareMCPServer
+	MCPManager           *mcp.MCPManager
 	WorkspaceRoot        string
 
 	// Server reference for broadcasting events (set externally)
@@ -103,6 +104,11 @@ func NewApp(ctx context.Context, appConfig *AppConfig) (*App, error) {
 	// Initialize MCP server
 	if err := app.initializeMCPServer(); err != nil {
 		return nil, fmt.Errorf("failed to initialize MCP server: %w", err)
+	}
+
+	// Initialize MCP manager
+	if err := app.initializeMCPManager(); err != nil {
+		return nil, fmt.Errorf("failed to initialize MCP manager: %w", err)
 	}
 
 	log.Printf("CodeForge application initialized successfully")
@@ -214,6 +220,25 @@ func (app *App) initializeMCPServer() error {
 		}
 	}
 
+	return nil
+}
+
+// initializeMCPManager initializes the MCP manager for external MCP servers
+func (app *App) initializeMCPManager() error {
+	log.Printf("Initializing MCP manager...")
+
+	// Create config directory path
+	configDir := filepath.Join(app.WorkspaceRoot, ".codeforge")
+
+	// Initialize MCP manager
+	app.MCPManager = mcp.NewMCPManager(configDir)
+
+	// Initialize the manager (this starts enabled servers)
+	if err := app.MCPManager.Initialize(); err != nil {
+		return fmt.Errorf("failed to initialize MCP manager: %w", err)
+	}
+
+	log.Printf("MCP manager initialized")
 	return nil
 }
 
@@ -525,6 +550,13 @@ func (app *App) Close() error {
 	// Close event manager
 	if app.EventManager != nil {
 		app.EventManager.Shutdown()
+	}
+
+	// Shutdown MCP manager
+	if app.MCPManager != nil {
+		if err := app.MCPManager.Shutdown(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to shutdown MCP manager: %w", err))
+		}
 	}
 
 	// Close vector database

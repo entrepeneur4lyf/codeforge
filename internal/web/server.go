@@ -16,6 +16,7 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/embeddings"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
 	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
+	"github.com/entrepeneur4lyf/codeforge/internal/mcp"
 	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 	"github.com/gorilla/mux"
@@ -150,6 +151,13 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/build", s.handleBuild).Methods("POST")
 	api.HandleFunc("/settings", s.handleSettings).Methods("GET", "POST")
 	api.HandleFunc("/commands", s.handleCommands).Methods("POST")
+
+	// MCP management routes
+	api.HandleFunc("/mcp/servers", s.handleMCPServers).Methods("GET", "POST")
+	api.HandleFunc("/mcp/servers/{name}", s.handleMCPServer).Methods("GET", "PUT", "DELETE")
+	api.HandleFunc("/mcp/servers/{name}/enable", s.handleMCPServerEnable).Methods("POST")
+	api.HandleFunc("/mcp/servers/{name}/disable", s.handleMCPServerDisable).Methods("POST")
+	api.HandleFunc("/mcp/discover", s.handleMCPDiscover).Methods("GET")
 	api.HandleFunc("/providers", s.handleProviders).Methods("GET")
 	api.HandleFunc("/lsp", s.handleLSP).Methods("POST")
 	api.HandleFunc("/mcp", s.handleMCP).Methods("POST")
@@ -476,7 +484,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
+            background: #1e3a8a; /* Solid blue background */
             display: none;
             z-index: 1000;
             align-items: center;
@@ -1265,8 +1273,37 @@ Use Ctrl+backtick to focus terminal, Ctrl+1 for files, Ctrl+2 for editor, Ctrl+3
             });
         }
 
-        // Keyboard shortcuts
+        // Keyboard shortcuts - F-key standardized action bar
         document.addEventListener('keydown', function(e) {
+            // F-key shortcuts (no modifiers needed)
+            switch(e.key) {
+                case 'F1':
+                    e.preventDefault();
+                    document.querySelector('.file-browser').focus();
+                    break;
+                case 'F2':
+                    e.preventDefault();
+                    document.getElementById('codeEditor').focus();
+                    break;
+                case 'F3':
+                    e.preventDefault();
+                    document.getElementById('chatInput').focus();
+                    break;
+                case 'F4':
+                    e.preventDefault();
+                    document.querySelector('.terminal-content').focus();
+                    break;
+                case 'F5':
+                    e.preventDefault();
+                    openSettings();
+                    break;
+                case 'F6':
+                    e.preventDefault();
+                    openCommandPalette();
+                    break;
+            }
+
+            // Legacy Ctrl shortcuts for compatibility
             if (e.ctrlKey || e.metaKey) {
                 switch(e.key) {
                     case '1':
@@ -1919,6 +1956,176 @@ func (s *Server) handleMCPResources(w http.ResponseWriter, r *http.Request) {
 	s.sendSuccess(w, resources)
 }
 
+// handleMCPServers handles MCP server management
+func (s *Server) handleMCPServers(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		// Return list of configured MCP servers
+		if s.app != nil && s.app.MCPManager != nil {
+			servers := s.app.MCPManager.GetAllServers()
+			s.sendSuccess(w, servers)
+		} else {
+			s.sendSuccess(w, []interface{}{})
+		}
+	case "POST":
+		// Add new MCP server
+		var config map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+			s.sendError(w, "Invalid request format", http.StatusBadRequest)
+			return
+		}
+
+		// Implement server addition
+		if s.app != nil && s.app.MCPManager != nil {
+			// Convert map to MCPServerConfig
+			serverConfig, err := s.convertToMCPServerConfig(config)
+			if err != nil {
+				s.sendError(w, fmt.Sprintf("Invalid server configuration: %v", err), http.StatusBadRequest)
+				return
+			}
+
+			// Add the server
+			if err := s.app.MCPManager.AddServer(serverConfig); err != nil {
+				s.sendError(w, fmt.Sprintf("Failed to add server: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			s.sendSuccess(w, map[string]interface{}{
+				"status": "server added",
+				"server": serverConfig,
+			})
+		} else {
+			s.sendError(w, "MCP manager not available", http.StatusServiceUnavailable)
+		}
+	}
+}
+
+// handleMCPServer handles individual MCP server operations
+func (s *Server) handleMCPServer(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	serverName := vars["name"]
+
+	switch r.Method {
+	case "GET":
+		// Get server details
+		if s.app != nil && s.app.MCPManager != nil {
+			server := s.app.MCPManager.GetServer(serverName)
+			if server != nil {
+				s.sendSuccess(w, server)
+			} else {
+				s.sendError(w, "Server not found", http.StatusNotFound)
+			}
+		} else {
+			s.sendError(w, "MCP manager not available", http.StatusServiceUnavailable)
+		}
+	case "PUT":
+		// Update server configuration
+		var config map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+			s.sendError(w, "Invalid request format", http.StatusBadRequest)
+			return
+		}
+
+		// Implement server update
+		if s.app != nil && s.app.MCPManager != nil {
+			// Get existing server configuration
+			existingServer := s.app.MCPManager.GetServer(serverName)
+			if existingServer == nil {
+				s.sendError(w, "Server not found", http.StatusNotFound)
+				return
+			}
+
+			// Convert map to MCPServerConfig and merge with existing
+			updatedConfig, err := s.convertToMCPServerConfig(config)
+			if err != nil {
+				s.sendError(w, fmt.Sprintf("Invalid server configuration: %v", err), http.StatusBadRequest)
+				return
+			}
+
+			// Preserve the original name
+			updatedConfig.Name = serverName
+
+			// Remove the old server and add the updated one
+			if err := s.app.MCPManager.RemoveServer(serverName); err != nil {
+				s.sendError(w, fmt.Sprintf("Failed to remove old server: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			if err := s.app.MCPManager.AddServer(updatedConfig); err != nil {
+				s.sendError(w, fmt.Sprintf("Failed to add updated server: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			s.sendSuccess(w, map[string]interface{}{
+				"status": "server updated",
+				"server": updatedConfig,
+			})
+		} else {
+			s.sendError(w, "MCP manager not available", http.StatusServiceUnavailable)
+		}
+	case "DELETE":
+		// Remove server
+		if s.app != nil && s.app.MCPManager != nil {
+			err := s.app.MCPManager.RemoveServer(serverName)
+			if err != nil {
+				s.sendError(w, fmt.Sprintf("Failed to remove server: %v", err), http.StatusInternalServerError)
+			} else {
+				s.sendSuccess(w, map[string]string{"status": "server removed"})
+			}
+		} else {
+			s.sendError(w, "MCP manager not available", http.StatusServiceUnavailable)
+		}
+	}
+}
+
+// handleMCPServerEnable enables an MCP server
+func (s *Server) handleMCPServerEnable(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	serverName := vars["name"]
+
+	if s.app != nil && s.app.MCPManager != nil {
+		err := s.app.MCPManager.EnableServer(serverName)
+		if err != nil {
+			s.sendError(w, fmt.Sprintf("Failed to enable server: %v", err), http.StatusInternalServerError)
+		} else {
+			s.sendSuccess(w, map[string]string{"status": "server enabled"})
+		}
+	} else {
+		s.sendError(w, "MCP manager not available", http.StatusServiceUnavailable)
+	}
+}
+
+// handleMCPServerDisable disables an MCP server
+func (s *Server) handleMCPServerDisable(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	serverName := vars["name"]
+
+	if s.app != nil && s.app.MCPManager != nil {
+		err := s.app.MCPManager.DisableServer(serverName)
+		if err != nil {
+			s.sendError(w, fmt.Sprintf("Failed to disable server: %v", err), http.StatusInternalServerError)
+		} else {
+			s.sendSuccess(w, map[string]string{"status": "server disabled"})
+		}
+	} else {
+		s.sendError(w, "MCP manager not available", http.StatusServiceUnavailable)
+	}
+}
+
+// handleMCPDiscover discovers available MCP servers
+func (s *Server) handleMCPDiscover(w http.ResponseWriter, r *http.Request) {
+	if s.app != nil && s.app.MCPManager != nil {
+		servers, err := s.app.MCPManager.DiscoverServers()
+		if err != nil {
+			s.sendError(w, fmt.Sprintf("Failed to discover servers: %v", err), http.StatusInternalServerError)
+		} else {
+			s.sendSuccess(w, servers)
+		}
+	} else {
+		s.sendError(w, "MCP manager not available", http.StatusServiceUnavailable)
+	}
+}
+
 // handleStatus returns system status
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	status := map[string]interface{}{
@@ -1995,4 +2202,111 @@ func (s *Server) Start(port int) error {
 	addr := fmt.Sprintf(":%d", port)
 	fmt.Printf("🌐 Web interface starting on http://localhost%s\n", addr)
 	return http.ListenAndServe(addr, s.router)
+}
+
+// convertToMCPServerConfig converts a map to MCPServerConfig
+func (s *Server) convertToMCPServerConfig(config map[string]interface{}) (*mcp.MCPServerConfig, error) {
+	// Extract required fields
+	name, ok := config["name"].(string)
+	if !ok || name == "" {
+		return nil, fmt.Errorf("name is required and must be a string")
+	}
+
+	serverType, ok := config["type"].(string)
+	if !ok || serverType == "" {
+		return nil, fmt.Errorf("type is required and must be a string")
+	}
+
+	// Validate server type
+	var mcpType mcp.MCPServerType
+	switch serverType {
+	case "local":
+		mcpType = mcp.MCPServerTypeLocal
+	case "remote", "http":
+		mcpType = mcp.MCPServerTypeRemote
+	case "sse":
+		mcpType = mcp.MCPServerTypeSSE
+	default:
+		return nil, fmt.Errorf("invalid server type: %s", serverType)
+	}
+
+	// Extract optional fields with defaults
+	description, _ := config["description"].(string)
+	enabled, _ := config["enabled"].(bool)
+
+	// Extract command for local servers
+	var command []string
+	if cmdInterface, exists := config["command"]; exists {
+		if cmdSlice, ok := cmdInterface.([]interface{}); ok {
+			for _, cmd := range cmdSlice {
+				if cmdStr, ok := cmd.(string); ok {
+					command = append(command, cmdStr)
+				}
+			}
+		} else if cmdStr, ok := cmdInterface.(string); ok {
+			command = []string{cmdStr}
+		}
+	}
+
+	// Extract URL for remote servers
+	url, _ := config["url"].(string)
+
+	// Extract environment variables
+	environment := make(map[string]string)
+	if envInterface, exists := config["environment"]; exists {
+		if envMap, ok := envInterface.(map[string]interface{}); ok {
+			for k, v := range envMap {
+				if vStr, ok := v.(string); ok {
+					environment[k] = vStr
+				}
+			}
+		}
+	}
+
+	// Extract capability flags with defaults
+	tools := true
+	if toolsInterface, exists := config["tools"]; exists {
+		if toolsBool, ok := toolsInterface.(bool); ok {
+			tools = toolsBool
+		}
+	}
+
+	resources := true
+	if resourcesInterface, exists := config["resources"]; exists {
+		if resourcesBool, ok := resourcesInterface.(bool); ok {
+			resources = resourcesBool
+		}
+	}
+
+	prompts := true
+	if promptsInterface, exists := config["prompts"]; exists {
+		if promptsBool, ok := promptsInterface.(bool); ok {
+			prompts = promptsBool
+		}
+	}
+
+	// Extract timeout with default
+	timeout := 30 * time.Second
+	if timeoutInterface, exists := config["timeout"]; exists {
+		if timeoutFloat, ok := timeoutInterface.(float64); ok {
+			timeout = time.Duration(timeoutFloat) * time.Second
+		} else if timeoutInt, ok := timeoutInterface.(int); ok {
+			timeout = time.Duration(timeoutInt) * time.Second
+		}
+	}
+
+	return &mcp.MCPServerConfig{
+		Name:        name,
+		Type:        mcpType,
+		Description: description,
+		Enabled:     enabled,
+		Command:     command,
+		Args:        []string{}, // Could be extracted from config if needed
+		URL:         url,
+		Environment: environment,
+		Tools:       tools,
+		Resources:   resources,
+		Prompts:     prompts,
+		Timeout:     timeout,
+	}, nil
 }

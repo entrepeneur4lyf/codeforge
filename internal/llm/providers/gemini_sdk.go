@@ -44,9 +44,24 @@ func (h *GeminiSDKHandler) CreateMessage(ctx context.Context, systemPrompt strin
 	if h.client == nil {
 		// Create client config with API key
 		config := &genai.ClientConfig{
-			APIKey:  h.options.APIKey,
-			Backend: genai.BackendGeminiAPI,
+			APIKey: h.options.APIKey,
 		}
+
+		// Determine backend based on configuration
+		if h.options.VertexProjectID != "" {
+			// Use Vertex AI backend for Google Cloud
+			config.Backend = genai.BackendVertexAI
+			config.Project = h.options.VertexProjectID
+			if h.options.VertexRegion != "" {
+				config.Location = h.options.VertexRegion
+			} else {
+				config.Location = "us-central1" // Default location
+			}
+		} else {
+			// Use Gemini API backend (AI Studio)
+			config.Backend = genai.BackendGeminiAPI
+		}
+
 		client, err := genai.NewClient(ctx, config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Gemini client: %w", err)
