@@ -563,7 +563,7 @@ func (sfw *SafeFileWriter) CreateFile(ctx context.Context, path string, content 
 	}
 
 	if !result.Success {
-		return fmt.Errorf(result.Error)
+		return fmt.Errorf("%s", result.Error)
 	}
 
 	return nil
