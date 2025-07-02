@@ -90,15 +90,45 @@ func (p *ChatPage) Init() tea.Cmd {
 		p.sessions.Init(),
 	}
 	
-	// Create initial session
-	initialSession := chat.Session{
-		ID:           p.currentSessionID,
-		Title:        "New Chat",
-		UpdatedAt:    time.Now(),
-		MessageCount: 0,
-	}
-	
+	// Load existing sessions from database and create initial session if none exist
 	cmds = append(cmds, func() tea.Msg {
+		if p.app != nil && p.app.ChatStore != nil {
+			ctx := context.Background()
+			sessions, err := p.app.GetChatSessions(ctx, "", 20, 0)
+			if err != nil {
+				log.Printf("Warning: Failed to load sessions: %v", err)
+			} else if len(sessions) > 0 {
+				// Convert storage sessions to TUI sessions
+				tuiSessions := make([]chat.Session, len(sessions))
+				for i, s := range sessions {
+					tuiSessions[i] = chat.Session{
+						ID:           s.ID,
+						Title:        s.Title,
+						LastMessage:  s.LastMessage,
+						UpdatedAt:    s.UpdatedAt,
+						MessageCount: s.MessageCount,
+					}
+				}
+				
+				// Use the most recent session as current
+				p.currentSessionID = sessions[0].ID
+				
+				// Load sessions into the sessions model
+				p.sessions.SetSessions(tuiSessions)
+				
+				log.Printf("Loaded %d existing sessions", len(sessions))
+				return chat.SessionSelectedMsg{SessionID: sessions[0].ID}
+			}
+		}
+		
+		// No existing sessions, create initial session
+		initialSession := chat.Session{
+			ID:           p.currentSessionID,
+			Title:        "New Chat",
+			UpdatedAt:    time.Now(),
+			MessageCount: 0,
+		}
+		
 		return chat.SessionCreatedMsg{Session: initialSession}
 	})
 	
@@ -226,7 +256,33 @@ func (p *ChatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Switch session
 		p.currentSessionID = msg.SessionID
 		p.chatView.SetSessionID(msg.SessionID)
-		// TODO: Load session history from storage
+		
+		// Load session history from storage
+		if p.app != nil {
+			go func() {
+				ctx := context.Background()
+				messages, err := p.app.GetLatestChatMessages(ctx, msg.SessionID, 50)
+				if err != nil {
+					log.Printf("Warning: Failed to load session history: %v", err)
+					return
+				}
+				
+				// Convert storage messages to TUI messages
+				tuiMessages := make([]chat.Message, len(messages))
+				for i, storageMsg := range messages {
+					tuiMessages[i] = chat.Message{
+						ID:      storageMsg.ID,
+						Role:    storageMsg.Role,
+						Content: storageMsg.Content,
+					}
+				}
+				
+				// Load messages into chat view
+				p.chatView.LoadMessages(tuiMessages)
+				
+				log.Printf("Loaded %d messages for session %s", len(messages), msg.SessionID)
+			}()
+		}
 		
 	case chat.SessionCreatedMsg:
 		// Switch to new session

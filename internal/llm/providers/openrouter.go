@@ -18,7 +18,7 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
-	"github.com/entrepeneur4lyf/codeforge/internal/llm/models"
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm/transform"
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 )
@@ -224,7 +224,7 @@ func (h *OpenRouterHandler) GetModel() llm.ModelResponse {
 
 	// Try to get model from registry first
 	registry := models.NewModelRegistry()
-	if canonicalModel, exists := registry.GetModelByProvider(models.ProviderOpenRouter, modelID); exists {
+	if canonicalModel, exists := registry.GetModelByProvider(models.ProviderOpenRouterCanonical, modelID); exists {
 		return llm.ModelResponse{
 			ID:   modelID,
 			Info: h.convertToLLMModelInfo(canonicalModel),

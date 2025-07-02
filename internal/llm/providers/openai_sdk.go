@@ -148,7 +148,7 @@ func convertModelToOpenAI(modelID string) openai.ChatModel {
 }
 
 // getDefaultModelInfo returns default model information for OpenAI models
-func (h *OpenAISDKHandler) getDefaultModelInfo(modelID string) llm.ModelInfo {
+func (h *OpenAISDKHandler) getDefaultModelInfo(_ string) llm.ModelInfo {
 	// Default values for OpenAI models
 	return llm.ModelInfo{
 		MaxTokens:           4096,

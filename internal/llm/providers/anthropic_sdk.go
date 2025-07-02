@@ -33,13 +33,6 @@ func NewAnthropicSDKHandler(options llm.ApiHandlerOptions) *AnthropicSDKHandler 
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // CreateMessage sends a message to Anthropic and returns a streaming response
 func (h *AnthropicSDKHandler) CreateMessage(ctx context.Context, systemPrompt string, messages []llm.Message) (llm.ApiStream, error) {
 	// Convert our messages to Anthropic format
@@ -184,7 +177,7 @@ func (h *AnthropicSDKHandler) GetApiStreamUsage() (*llm.ApiStreamUsageChunk, err
 }
 
 // getDefaultModelInfo returns default model information for Anthropic models
-func (h *AnthropicSDKHandler) getDefaultModelInfo(modelID string) llm.ModelInfo {
+func (h *AnthropicSDKHandler) getDefaultModelInfo(_ string) llm.ModelInfo {
 	// Default values for Anthropic models
 	return llm.ModelInfo{
 		MaxTokens:           4096,
@@ -214,7 +207,7 @@ func GetAnthropicModels(ctx context.Context, apiKey string) ([]AnthropicModelInf
 }
 
 // getCachedAnthropicModels returns cached models if available and fresh
-func getCachedAnthropicModels(ctx context.Context, apiKey string, forceRefresh bool) ([]AnthropicModelInfo, error) {
+func getCachedAnthropicModels(_ context.Context, _ string, forceRefresh bool) ([]AnthropicModelInfo, error) {
 	cacheDir := filepath.Join(os.Getenv("HOME"), ".codeforge", "cache")
 	cacheFile := filepath.Join(cacheDir, "anthropic_models.json")
 

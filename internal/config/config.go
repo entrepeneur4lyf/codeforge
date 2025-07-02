@@ -577,7 +577,7 @@ func initializeEnhancedManagers() {
 			SupportsReasoning:  modelConfig.SupportsReasoning,
 			SummarizeThreshold: modelConfig.SummarizeThreshold,
 		}
-		cfg.ModelConfigManager.SetModelConfig(models.ModelID(modelID), enhancedConfig)
+		cfg.ModelConfigManager.SetModelConfig(models.CanonicalModelID(modelID), enhancedConfig)
 	}
 
 	// Initialize provider configurations
@@ -608,7 +608,7 @@ func (c *Config) GetEnhancedModelConfig(modelID models.ModelID) *EnhancedModelCo
 	if c.ModelConfigManager == nil {
 		return nil
 	}
-	return c.ModelConfigManager.GetModelConfig(modelID)
+	return c.ModelConfigManager.GetModelConfig(models.CanonicalModelID(modelID))
 }
 
 // GetProviderConfig returns provider configuration with health status

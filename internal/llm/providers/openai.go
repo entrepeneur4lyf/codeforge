@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
-	"github.com/entrepeneur4lyf/codeforge/internal/llm/models"
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm/transform"
 )
 
@@ -165,7 +165,7 @@ func (h *OpenAIHandler) CreateMessage(ctx context.Context, systemPrompt string, 
 func (h *OpenAIHandler) GetModel() llm.ModelResponse {
 	// Try to get model from registry first
 	registry := models.NewModelRegistry()
-	if canonicalModel, exists := registry.GetModelByProvider(models.ProviderOpenAI, h.options.ModelID); exists {
+	if canonicalModel, exists := registry.GetModelByProvider(models.ProviderOpenAICanonical, h.options.ModelID); exists {
 		return llm.ModelResponse{
 			ID:   h.options.ModelID,
 			Info: h.convertToLLMModelInfo(canonicalModel),

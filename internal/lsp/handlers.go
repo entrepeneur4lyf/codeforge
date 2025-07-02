@@ -61,6 +61,23 @@ func (c *Client) GetDiagnostics(uri string) []protocol.Diagnostic {
 	return result
 }
 
+// GetAllDiagnostics returns all diagnostics across all files
+func (c *Client) GetAllDiagnostics() map[string][]protocol.Diagnostic {
+	c.diagnosticsMu.RLock()
+	defer c.diagnosticsMu.RUnlock()
+
+	// Return a deep copy to avoid race conditions
+	result := make(map[string][]protocol.Diagnostic)
+	for uri, diagnostics := range c.diagnostics {
+		if len(diagnostics) > 0 {
+			diagCopy := make([]protocol.Diagnostic, len(diagnostics))
+			copy(diagCopy, diagnostics)
+			result[uri] = diagCopy
+		}
+	}
+	return result
+}
+
 // OpenFile opens a file in the LSP server
 func (c *Client) OpenFile(ctx context.Context, filepath string) error {
 	uri := fmt.Sprintf("file://%s", filepath)
@@ -337,13 +354,13 @@ func (c *Client) GetCodeActions(ctx context.Context, filepath string, startLine,
 }
 
 // ExecuteCommand executes a workspace command
-func (c *Client) ExecuteCommand(ctx context.Context, command string, args []interface{}) (interface{}, error) {
+func (c *Client) ExecuteCommand(ctx context.Context, command string, args []any) (any, error) {
 	params := protocol.ExecuteCommandParams{
 		Command:   command,
 		Arguments: args,
 	}
 
-	var result interface{}
+	var result any
 	if err := c.Call(ctx, "workspace/executeCommand", params, &result); err != nil {
 		return nil, fmt.Errorf("execute command failed: %w", err)
 	}
@@ -691,8 +708,7 @@ func (c *Client) CloseAllFiles(ctx context.Context) {
 	files := make([]string, 0, len(c.openFiles))
 	for uri := range c.openFiles {
 		// Convert URI back to filepath
-		if strings.HasPrefix(uri, "file://") {
-			filepath := strings.TrimPrefix(uri, "file://")
+		if filepath, found := strings.CutPrefix(uri, "file://"); found {
 			files = append(files, filepath)
 		}
 	}

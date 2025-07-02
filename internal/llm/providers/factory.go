@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
-	"github.com/entrepeneur4lyf/codeforge/internal/llm/models"
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm/transform"
 )
 

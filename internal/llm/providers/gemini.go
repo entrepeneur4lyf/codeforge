@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
-	"github.com/entrepeneur4lyf/codeforge/internal/llm/models"
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
 )
 
 // GeminiHandler implements the ApiHandler interface for Google's Gemini models
@@ -165,9 +165,9 @@ func (h *GeminiHandler) CreateMessage(ctx context.Context, systemPrompt string, 
 func (h *GeminiHandler) GetModel() llm.ModelResponse {
 	// Try to get model from registry first
 	registry := models.NewModelRegistry()
-	providerID := models.ProviderGemini
+	providerID := models.ProviderGeminiCanonical
 	if h.isVertex {
-		providerID = models.ProviderVertex
+		providerID = models.ProviderVertexCanonical
 	}
 
 	if canonicalModel, exists := registry.GetModelByProvider(providerID, h.options.ModelID); exists {

@@ -375,7 +375,8 @@ func (h *BedrockSDKHandler) convertToCohereFormat(systemPrompt string, messages 
 	// Process messages - last user message becomes the main message
 	for i, msg := range messages {
 		content := h.extractTextFromContent(msg.Content)
-		if msg.Role == "user" {
+		switch msg.Role {
+		case "user":
 			if i == len(messages)-1 {
 				// Last user message becomes the main message
 				currentMessage = content
@@ -386,7 +387,7 @@ func (h *BedrockSDKHandler) convertToCohereFormat(systemPrompt string, messages 
 					Message: content,
 				})
 			}
-		} else if msg.Role == "assistant" {
+		case "assistant":
 			chatHistory = append(chatHistory, CohereMessage{
 				Role:    "CHATBOT",
 				Message: content,
@@ -450,7 +451,8 @@ func (h *BedrockSDKHandler) convertToMetaFormat(systemPrompt string, messages []
 	for i, msg := range messages {
 		content := h.extractTextFromContent(msg.Content)
 
-		if msg.Role == "user" {
+		switch msg.Role {
+		case "user":
 			if i == 0 && systemPrompt != "" {
 				// First user message after system prompt
 				promptBuilder.WriteString(content + " [/INST]")
@@ -461,7 +463,7 @@ func (h *BedrockSDKHandler) convertToMetaFormat(systemPrompt string, messages []
 				// Subsequent user messages
 				promptBuilder.WriteString("<s>[INST] " + content + " [/INST]")
 			}
-		} else if msg.Role == "assistant" {
+		case "assistant":
 			promptBuilder.WriteString(" " + content + " </s>")
 		}
 	}
@@ -515,11 +517,14 @@ func (h *BedrockSDKHandler) convertToMistralFormat(systemPrompt string, messages
 
 	// Convert messages to Mistral format
 	for _, msg := range messages {
-		role := "user"
-		if msg.Role == "assistant" {
+		var role string
+		switch msg.Role {
+		case "assistant":
 			role = "assistant"
-		} else if msg.Role == "system" {
+		case "system":
 			role = "system"
+		default:
+			role = "user"
 		}
 
 		mistralMessages = append(mistralMessages, MistralMessage{

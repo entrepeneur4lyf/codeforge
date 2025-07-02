@@ -15,10 +15,15 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/events"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm/providers"
+	"github.com/entrepeneur4lyf/codeforge/internal/llm/tools"
+	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
 	"github.com/entrepeneur4lyf/codeforge/internal/mcp"
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
 	"github.com/entrepeneur4lyf/codeforge/internal/notifications"
 	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
+	"github.com/entrepeneur4lyf/codeforge/internal/storage"
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
+	"github.com/google/uuid"
 )
 
 // App represents the main CodeForge application with all integrated systems
@@ -34,6 +39,11 @@ type App struct {
 	FileOperationManager *permissions.FileOperationManager
 	MCPServer            *mcp.PermissionAwareMCPServer
 	MCPManager           *mcp.MCPManager
+	ToolRegistry         *tools.ToolRegistry
+	ChatStore            storage.ChatStore
+	PathManager          *storage.PathManager
+	ModelManager         *models.ModelManager
+	ModelRegistry        *models.ModelRegistry
 	WorkspaceRoot        string
 
 	// Server reference for broadcasting events (set externally)
@@ -74,8 +84,12 @@ func NewApp(ctx context.Context, appConfig *AppConfig) (*App, error) {
 		return nil, fmt.Errorf("failed to resolve workspace path: %w", err)
 	}
 
+	// Initialize path manager for standardized storage locations
+	pathManager := storage.NewPathManager()
+	
 	app := &App{
 		Config:        cfg,
+		PathManager:   pathManager,
 		WorkspaceRoot: absWorkspace,
 	}
 
@@ -113,6 +127,33 @@ func NewApp(ctx context.Context, appConfig *AppConfig) (*App, error) {
 		return nil, fmt.Errorf("failed to initialize MCP manager: %w", err)
 	}
 
+	// Initialize tool registry
+	if err := app.initializeToolRegistry(); err != nil {
+		return nil, fmt.Errorf("failed to initialize tool registry: %w", err)
+	}
+
+	// Initialize models system
+	if err := app.initializeModelsSystem(); err != nil {
+		return nil, fmt.Errorf("failed to initialize models system: %w", err)
+	}
+
+	// Initialize chat store
+	if err := app.initializeChatStore(); err != nil {
+		return nil, fmt.Errorf("failed to initialize chat store: %w", err)
+	}
+
+	// Link managers to context manager for tool context integration
+	if app.ContextManager != nil {
+		if app.MCPManager != nil {
+			app.ContextManager.SetMCPManager(app.MCPManager)
+			log.Printf("MCP manager linked to context manager for tool context integration")
+		}
+		if app.ToolRegistry != nil {
+			app.ContextManager.SetToolRegistry(app.ToolRegistry)
+			log.Printf("Tool registry linked to context manager for built-in tool context integration")
+		}
+	}
+
 	log.Printf("CodeForge application initialized successfully")
 	log.Printf("Workspace: %s", absWorkspace)
 	log.Printf("Permissions: %v", appConfig.EnablePermissions)
@@ -125,9 +166,13 @@ func NewApp(ctx context.Context, appConfig *AppConfig) (*App, error) {
 func (app *App) initializeVectorDB(dbPath string) error {
 	log.Printf("Initializing vector database...")
 
-	// Set database path if not provided
+	// Set database path if not provided - use standardized user directory
 	if dbPath == "" {
-		dbPath = filepath.Join(app.WorkspaceRoot, ".codeforge", "vector.db")
+		var err error
+		dbPath, err = app.PathManager.GetVectorDatabasePath()
+		if err != nil {
+			return fmt.Errorf("failed to get vector database path: %w", err)
+		}
 	}
 
 	// Initialize vector database
@@ -148,15 +193,13 @@ func (app *App) initializeVectorDB(dbPath string) error {
 func (app *App) initializePermissionSystem(permDBPath string) error {
 	log.Printf("Initializing permission system...")
 
-	// Set permission database path if not provided
+	// Set permission database path if not provided - use standardized user directory
 	if permDBPath == "" {
-		permDBPath = filepath.Join(app.WorkspaceRoot, ".codeforge", "permissions.db")
-	}
-
-	// Ensure .codeforge directory exists
-	codeforgeDir := filepath.Dir(permDBPath)
-	if err := os.MkdirAll(codeforgeDir, 0755); err != nil {
-		return fmt.Errorf("failed to create .codeforge directory: %w", err)
+		var err error
+		permDBPath, err = app.PathManager.GetPermissionDatabasePath()
+		if err != nil {
+			return fmt.Errorf("failed to get permission database path: %w", err)
+		}
 	}
 
 	// Create permission configuration with defaults
@@ -229,8 +272,11 @@ func (app *App) initializeMCPServer() error {
 func (app *App) initializeMCPManager() error {
 	log.Printf("Initializing MCP manager...")
 
-	// Create config directory path
-	configDir := filepath.Join(app.WorkspaceRoot, ".codeforge")
+	// Create config directory path - use standardized user directory
+	configDir, err := app.PathManager.GetMCPConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get MCP config directory: %w", err)
+	}
 
 	// Initialize MCP manager
 	app.MCPManager = mcp.NewMCPManager(configDir)
@@ -241,6 +287,50 @@ func (app *App) initializeMCPManager() error {
 	}
 
 	log.Printf("MCP manager initialized")
+	return nil
+}
+
+// initializeToolRegistry initializes the built-in tool registry
+func (app *App) initializeToolRegistry() error {
+	log.Printf("Initializing tool registry...")
+
+	// Get LSP manager for tool registry initialization
+	var lspManager *lsp.Manager
+	if mgr := lsp.GetManager(); mgr != nil {
+		lspManager = mgr
+	}
+
+	// Initialize tool registry with available services
+	app.ToolRegistry = tools.NewToolRegistry(lspManager, app.PermissionService)
+
+	log.Printf("Tool registry initialized with built-in tools")
+	return nil
+}
+
+// initializeChatStore initializes the chat storage system
+func (app *App) initializeChatStore() error {
+	log.Printf("Initializing chat store...")
+
+	// Use default chat store with standardized user directory
+	chatStore, err := storage.NewDefaultChatStore()
+	if err != nil {
+		return fmt.Errorf("failed to create chat store: %w", err)
+	}
+
+	app.ChatStore = chatStore
+
+	// Validate storage paths
+	if err := app.PathManager.ValidatePaths(); err != nil {
+		return fmt.Errorf("failed to validate storage paths: %w", err)
+	}
+
+	// Log storage location
+	dbPath, _ := app.PathManager.GetChatDatabasePath()
+	codeforgeDir, _ := app.PathManager.GetCodeForgeDir()
+	
+	log.Printf("Chat store initialized: %s", dbPath)
+	log.Printf("CodeForge user directory: %s", codeforgeDir)
+	
 	return nil
 }
 
@@ -568,6 +658,13 @@ func (app *App) Close() error {
 		}
 	}
 
+	// Close chat store
+	if app.ChatStore != nil {
+		if err := app.ChatStore.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close chat store: %w", err))
+		}
+	}
+
 	// Close permission storage
 	if app.PermissionStorage != nil {
 		if err := app.PermissionStorage.Close(); err != nil {
@@ -615,9 +712,77 @@ func NewAppWithConfig(ctx context.Context, configPath, workspaceRoot string, ena
 	return NewApp(ctx, appConfig)
 }
 
+// initializeModelsSystem initializes the advanced models management system
+func (app *App) initializeModelsSystem() error {
+	log.Printf("Initializing advanced models system...")
+
+	// Initialize model registry with canonical models
+	app.ModelRegistry = models.NewModelRegistry()
+
+	// Initialize model manager with intelligent selection
+	app.ModelManager = models.NewModelManager(app.ModelRegistry)
+
+	log.Printf("Models system initialized with canonical registry and intelligent management")
+	return nil
+}
+
 // GetAvailableModels returns all available LLM models
 func (app *App) GetAvailableModels() []llm.ModelResponse {
 	return llm.GetAvailableModels()
+}
+
+// GetCanonicalModels returns all canonical models with advanced metadata
+func (app *App) GetCanonicalModels() []*models.CanonicalModel {
+	if app.ModelRegistry == nil {
+		return []*models.CanonicalModel{}
+	}
+	return app.ModelRegistry.ListModels()
+}
+
+// GetModelRecommendation returns intelligent model recommendations
+func (app *App) GetModelRecommendation(ctx context.Context, criteria models.ModelSelectionCriteria) (*models.ModelRecommendation, error) {
+	if app.ModelManager == nil {
+		return nil, fmt.Errorf("model manager not initialized")
+	}
+	return app.ModelManager.GetRecommendation(ctx, criteria)
+}
+
+// GetFavoriteModels returns user's favorite models
+func (app *App) GetFavoriteModels() []*models.CanonicalModel {
+	if app.ModelManager == nil {
+		return []*models.CanonicalModel{}
+	}
+	return app.ModelManager.GetFavoriteModels()
+}
+
+// AddFavoriteModel adds a model to user's favorites
+func (app *App) AddFavoriteModel(modelID models.CanonicalModelID) error {
+	if app.ModelManager == nil {
+		return fmt.Errorf("model manager not initialized")
+	}
+	return app.ModelManager.AddFavorite(modelID)
+}
+
+// RemoveFavoriteModel removes a model from user's favorites
+func (app *App) RemoveFavoriteModel(modelID models.CanonicalModelID) {
+	if app.ModelManager != nil {
+		app.ModelManager.RemoveFavorite(modelID)
+	}
+}
+
+// UpdateModelPreferences updates user model preferences
+func (app *App) UpdateModelPreferences(prefs models.UserPreferences) {
+	if app.ModelManager != nil {
+		app.ModelManager.UpdatePreferences(prefs)
+	}
+}
+
+// GetModelPreferences returns current user model preferences
+func (app *App) GetModelPreferences() models.UserPreferences {
+	if app.ModelManager == nil {
+		return models.UserPreferences{}
+	}
+	return app.ModelManager.GetPreferences()
 }
 
 // SetCurrentModel sets the current model for the app
@@ -687,6 +852,52 @@ func (app *App) ProcessChatMessageWithStream(ctx context.Context, sessionID, mes
 
 		if !result.Allowed {
 			return nil, nil, fmt.Errorf("permission denied: %s", result.Reason)
+		}
+	}
+
+	// Ensure session exists and save user message to database
+	if app.ChatStore != nil {
+		// Check if session exists, create if not
+		existingSession, err := app.ChatStore.GetSession(ctx, sessionID)
+		if err != nil {
+			// Session doesn't exist, create it
+			now := time.Now()
+			newSession := &storage.Session{
+				ID:           sessionID,
+				Title:        "New Chat",
+				Model:        modelID,
+				CreatedAt:    now,
+				UpdatedAt:    now,
+				MessageCount: 0,
+				TotalTokens:  0,
+				Metadata:     map[string]interface{}{"created_by": "app"},
+			}
+			
+			if err := app.ChatStore.CreateSession(ctx, newSession); err != nil {
+				log.Printf("Warning: Failed to create session: %v", err)
+			} else {
+				log.Printf("Created new chat session: %s", sessionID)
+			}
+		} else {
+			log.Printf("Using existing session: %s (title: %s)", sessionID, existingSession.Title)
+		}
+
+		// Save user message to database
+		userMsgID := uuid.New().String()
+		userMsg := &storage.Message{
+			ID:        userMsgID,
+			SessionID: sessionID,
+			Role:      "user",
+			Content:   message,
+			Tokens:    0, // Will be calculated after processing
+			CreatedAt: time.Now(),
+			Metadata:  map[string]interface{}{"model": modelID},
+		}
+
+		if err := app.ChatStore.SaveMessage(ctx, userMsg); err != nil {
+			log.Printf("Warning: Failed to save user message: %v", err)
+		} else {
+			log.Printf("Saved user message to database: %s", userMsgID)
 		}
 	}
 
@@ -802,6 +1013,56 @@ func (app *App) ProcessChatMessageWithStream(ctx context.Context, sessionID, mes
 			}
 		}
 
+		// Save assistant message to database
+		if app.ChatStore != nil && fullResponse != "" {
+			assistantMsgID := uuid.New().String()
+			assistantMsg := &storage.Message{
+				ID:        assistantMsgID,
+				SessionID: sessionID,
+				Role:      "assistant",
+				Content:   fullResponse,
+				Tokens:    0, // Will be calculated if needed
+				CreatedAt: time.Now(),
+				Metadata:  map[string]interface{}{"model": modelID},
+			}
+
+			if err := app.ChatStore.SaveMessage(ctx, assistantMsg); err != nil {
+				log.Printf("Warning: Failed to save assistant message: %v", err)
+			} else {
+				log.Printf("Saved assistant message to database: %s", assistantMsgID)
+			}
+
+			// Save context snapshot if available
+			if processedCtx != nil {
+				snapshotID := uuid.New().String()
+				snapshot := &storage.ContextSnapshot{
+					ID:               snapshotID,
+					SessionID:        sessionID,
+					ProcessedContext: map[string]interface{}{
+						"original_count":    processedCtx.OriginalCount,
+						"final_count":       processedCtx.FinalCount,
+						"original_tokens":   processedCtx.OriginalTokens,
+						"final_tokens":      processedCtx.FinalTokens,
+						"compression_ratio": processedCtx.CompressionRatio,
+						"model_id":          processedCtx.ModelID,
+						"cache_key":         processedCtx.CacheKey,
+					},
+					OriginalTokens:   processedCtx.OriginalTokens,
+					FinalTokens:      processedCtx.FinalTokens,
+					CompressionRatio: processedCtx.CompressionRatio,
+					ModelID:          processedCtx.ModelID,
+					ProcessingSteps:  processedCtx.ProcessingSteps,
+					CreatedAt:        time.Now(),
+				}
+
+				if err := app.ChatStore.SaveContextSnapshot(ctx, snapshot); err != nil {
+					log.Printf("Warning: Failed to save context snapshot: %v", err)
+				} else {
+					log.Printf("Saved context snapshot to database: %s", snapshotID)
+				}
+			}
+		}
+
 		// Publish chat message sent event
 		if app.EventManager != nil {
 			app.EventManager.PublishChat(events.ChatMessageSent, events.ChatEventPayload{
@@ -881,4 +1142,108 @@ func (app *App) GetLLMHandler(modelID string) llm.ApiHandler {
 	}
 	
 	return handler
+}
+
+// Session Management Methods
+
+// GetChatSessions returns a list of chat sessions for the user
+func (app *App) GetChatSessions(ctx context.Context, userID string, limit, offset int) ([]*storage.SessionSummary, error) {
+	if app.ChatStore == nil {
+		return nil, fmt.Errorf("chat store not initialized")
+	}
+	return app.ChatStore.ListSessions(ctx, userID, limit, offset)
+}
+
+// GetChatSession returns a specific chat session
+func (app *App) GetChatSession(ctx context.Context, sessionID string) (*storage.Session, error) {
+	if app.ChatStore == nil {
+		return nil, fmt.Errorf("chat store not initialized")
+	}
+	return app.ChatStore.GetSession(ctx, sessionID)
+}
+
+// GetChatMessages returns messages for a session with pagination
+func (app *App) GetChatMessages(ctx context.Context, sessionID string, limit, offset int) (*storage.MessageBatch, error) {
+	if app.ChatStore == nil {
+		return nil, fmt.Errorf("chat store not initialized")
+	}
+	return app.ChatStore.GetMessages(ctx, sessionID, limit, offset)
+}
+
+// GetLatestChatMessages returns the most recent messages for a session
+func (app *App) GetLatestChatMessages(ctx context.Context, sessionID string, limit int) ([]storage.Message, error) {
+	if app.ChatStore == nil {
+		return nil, fmt.Errorf("chat store not initialized")
+	}
+	return app.ChatStore.GetLatestMessages(ctx, sessionID, limit)
+}
+
+// CreateChatSession creates a new chat session
+func (app *App) CreateChatSession(ctx context.Context, title, modelID string) (*storage.Session, error) {
+	if app.ChatStore == nil {
+		return nil, fmt.Errorf("chat store not initialized")
+	}
+
+	now := time.Now()
+	session := &storage.Session{
+		ID:           uuid.New().String(),
+		Title:        title,
+		Model:        modelID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		MessageCount: 0,
+		TotalTokens:  0,
+		Metadata:     map[string]interface{}{"created_by": "user"},
+	}
+
+	if err := app.ChatStore.CreateSession(ctx, session); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	log.Printf("Created new chat session: %s (title: %s)", session.ID, session.Title)
+	return session, nil
+}
+
+// UpdateChatSession updates an existing chat session
+func (app *App) UpdateChatSession(ctx context.Context, sessionID, title string) error {
+	if app.ChatStore == nil {
+		return fmt.Errorf("chat store not initialized")
+	}
+
+	session, err := app.ChatStore.GetSession(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+
+	session.Title = title
+	session.UpdatedAt = time.Now()
+
+	if err := app.ChatStore.UpdateSession(ctx, session); err != nil {
+		return fmt.Errorf("failed to update session: %w", err)
+	}
+
+	log.Printf("Updated chat session: %s (new title: %s)", sessionID, title)
+	return nil
+}
+
+// DeleteChatSession deletes a chat session and all its messages
+func (app *App) DeleteChatSession(ctx context.Context, sessionID string) error {
+	if app.ChatStore == nil {
+		return fmt.Errorf("chat store not initialized")
+	}
+
+	if err := app.ChatStore.DeleteSession(ctx, sessionID); err != nil {
+		return fmt.Errorf("failed to delete session: %w", err)
+	}
+
+	log.Printf("Deleted chat session: %s", sessionID)
+	return nil
+}
+
+// GetChatStorageStats returns statistics about chat storage
+func (app *App) GetChatStorageStats(ctx context.Context) (map[string]interface{}, error) {
+	if app.ChatStore == nil {
+		return nil, fmt.Errorf("chat store not initialized")
+	}
+	return app.ChatStore.GetStats(ctx)
 }

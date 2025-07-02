@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
-	"github.com/entrepeneur4lyf/codeforge/internal/llm/models"
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
 )
 
 func TestOpenAIHandler_Excellence_Standards(t *testing.T) {
@@ -277,7 +277,7 @@ func TestOpenAIHandler_ModelRegistry_Integration(t *testing.T) {
 	registry := models.NewModelRegistry()
 
 	// Test that GPT-4o is in registry
-	model, exists := registry.GetModel(models.ModelGPT4o)
+	model, exists := registry.GetModel(models.ModelGPT4oCanonical)
 	if !exists {
 		t.Fatal("GPT-4o should be in registry")
 	}
@@ -287,7 +287,7 @@ func TestOpenAIHandler_ModelRegistry_Integration(t *testing.T) {
 	}
 
 	// Test provider mapping
-	providerModelID, err := registry.GetProviderModelID(models.ModelGPT4o, models.ProviderOpenAI)
+	providerModelID, err := registry.GetProviderModelID(models.ModelGPT4oCanonical, models.ProviderOpenAICanonical)
 	if err != nil {
 		t.Fatalf("Failed to get provider model ID: %v", err)
 	}

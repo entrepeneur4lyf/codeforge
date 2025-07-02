@@ -36,7 +36,6 @@ type ModelCache struct {
 	availability map[string]ModelAvailability // provider:model -> availability
 	performance  map[CanonicalModelID]ModelPerformance
 	lastUpdated  map[string]time.Time
-	mu           sync.RWMutex
 }
 
 // ModelAvailability tracks model availability status
@@ -92,8 +91,8 @@ func NewModelManager(registry *ModelRegistry) *ModelManager {
 			lastUpdated:  make(map[string]time.Time),
 		},
 		preferences: &UserPreferences{
-			DefaultModel:       ModelClaudeSonnet4, // Default to Claude Sonnet 4
-			PreferredProviders: []ProviderID{ProviderAnthropic, ProviderOpenAI, ProviderGemini},
+			DefaultModel:       ModelClaude4SonnetCanonical, // Default to Claude Sonnet 4
+			PreferredProviders: []ProviderID{ProviderAnthropicCanonical, ProviderOpenAICanonical, ProviderGeminiCanonical},
 			MaxCostPerMToken:   10.0, // $10 per million tokens
 			PreferredTier:      "paid",
 			RequiredFeatures:   []string{},
@@ -297,7 +296,7 @@ func (mm *ModelManager) calculateModelScore(model *CanonicalModel, criteria Mode
 	}
 
 	// Cost efficiency (lower cost = higher score)
-	if model.Pricing.OutputPrice > 0 {
+	if model.Pricing.OutputPrice > 0 && criteria.MaxCost > 0 {
 		costScore := 20 * (1.0 - min(model.Pricing.OutputPrice/criteria.MaxCost, 1.0))
 		score += costScore
 	}
@@ -414,14 +413,14 @@ func (mm *ModelManager) buildReasoning(model *CanonicalModel, criteria ModelSele
 		reasons = append(reasons, "Supports advanced reasoning capabilities")
 	}
 
-	if model.Pricing.OutputPrice <= criteria.MaxCost*0.5 {
+	if criteria.MaxCost > 0 && model.Pricing.OutputPrice <= criteria.MaxCost*0.5 {
 		reasons = append(reasons, "Cost-effective option")
 	}
 
 	return reasons
 }
 
-func (mm *ModelManager) calculateConfidence(model *CanonicalModel, criteria ModelSelectionCriteria) float64 {
+func (mm *ModelManager) calculateConfidence(model *CanonicalModel, _ ModelSelectionCriteria) float64 {
 	confidence := 0.7 // Base confidence
 
 	// Higher confidence for well-known models

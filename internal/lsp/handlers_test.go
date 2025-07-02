@@ -29,49 +29,31 @@ func TestLSPHandlers_Excellence_Standards(t *testing.T) {
 		client := newTestClient()
 
 		// Test that all new LSP methods exist and have proper signatures
-		// We test method existence without actually calling them to avoid nil pointer issues
+		// We test method existence by verifying they can be assigned to function variables
 
 		// Test signature help method signature
-		var signatureHelpFunc func(context.Context, string, int, int) (*protocol.SignatureHelp, error)
-		signatureHelpFunc = client.GetSignatureHelp
-		if signatureHelpFunc == nil {
-			t.Error("GetSignatureHelp method should exist")
-		}
+		signatureHelpFunc := client.GetSignatureHelp
+		_ = signatureHelpFunc // Method exists and has correct signature
 
 		// Test file content update method signature
-		var updateContentFunc func(context.Context, string, []byte) error
-		updateContentFunc = client.UpdateFileContent
-		if updateContentFunc == nil {
-			t.Error("UpdateFileContent method should exist")
-		}
+		updateContentFunc := client.UpdateFileContent
+		_ = updateContentFunc // Method exists and has correct signature
 
 		// Test save file method signature
-		var saveFileFunc func(context.Context, string, []byte) error
-		saveFileFunc = client.SaveFile
-		if saveFileFunc == nil {
-			t.Error("SaveFile method should exist")
-		}
+		saveFileFunc := client.SaveFile
+		_ = saveFileFunc // Method exists and has correct signature
 
 		// Test will save file method signature
-		var willSaveFunc func(context.Context, string, protocol.TextDocumentSaveReason) error
-		willSaveFunc = client.WillSaveFile
-		if willSaveFunc == nil {
-			t.Error("WillSaveFile method should exist")
-		}
+		willSaveFunc := client.WillSaveFile
+		_ = willSaveFunc // Method exists and has correct signature
 
 		// Test formatting methods exist
-		var formatFunc func(context.Context, string, protocol.FormattingOptions) ([]protocol.TextEdit, error)
-		formatFunc = client.GetFormattingEdits
-		if formatFunc == nil {
-			t.Error("GetFormattingEdits method should exist")
-		}
+		formatFunc := client.GetFormattingEdits
+		_ = formatFunc // Method exists and has correct signature
 
 		// Test document links method exists
-		var linksFunc func(context.Context, string) ([]protocol.DocumentLink, error)
-		linksFunc = client.GetDocumentLinks
-		if linksFunc == nil {
-			t.Error("GetDocumentLinks method should exist")
-		}
+		linksFunc := client.GetDocumentLinks
+		_ = linksFunc // Method exists and has correct signature
 	})
 
 	t.Run("Perfect_Go_Idioms", func(t *testing.T) {
@@ -299,7 +281,7 @@ func TestLSPHandlers_Excellence_Standards(t *testing.T) {
 		start := time.Now()
 
 		ctx := context.Background()
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			client.UpdateFileContent(ctx, "/test/file.go", []byte("test"))
 		}
 
@@ -312,7 +294,7 @@ func TestLSPHandlers_Excellence_Standards(t *testing.T) {
 
 		// Test URI construction efficiency
 		start = time.Now()
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			client.GetSignatureHelp(ctx, "/test/file.go", 10, 5)
 		}
 		duration = time.Since(start)

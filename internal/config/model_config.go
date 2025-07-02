@@ -50,7 +50,7 @@ type ModelLimits struct {
 // ModelFallbackConfig defines fallback behavior
 type ModelFallbackConfig struct {
 	Enabled           bool              `json:"enabled"`
-	FallbackModels    []models.ModelID  `json:"fallback_models"`
+	FallbackModels    []models.CanonicalModelID  `json:"fallback_models"`
 	TriggerConditions []FallbackTrigger `json:"trigger_conditions"`
 	MaxFallbackDepth  int               `json:"max_fallback_depth"`
 	FallbackDelay     time.Duration     `json:"fallback_delay"`
@@ -113,19 +113,19 @@ type EnhancedModelConfig struct {
 
 // ModelConfigManager manages enhanced model configurations
 type ModelConfigManager struct {
-	configs map[models.ModelID]*EnhancedModelConfig
+	configs map[models.CanonicalModelID]*EnhancedModelConfig
 	mu      sync.RWMutex
 }
 
 // NewModelConfigManager creates a new model configuration manager
 func NewModelConfigManager() *ModelConfigManager {
 	return &ModelConfigManager{
-		configs: make(map[models.ModelID]*EnhancedModelConfig),
+		configs: make(map[models.CanonicalModelID]*EnhancedModelConfig),
 	}
 }
 
 // GetModelConfig returns the enhanced configuration for a model
-func (mcm *ModelConfigManager) GetModelConfig(modelID models.ModelID) *EnhancedModelConfig {
+func (mcm *ModelConfigManager) GetModelConfig(modelID models.CanonicalModelID) *EnhancedModelConfig {
 	mcm.mu.RLock()
 	defer mcm.mu.RUnlock()
 
@@ -138,7 +138,7 @@ func (mcm *ModelConfigManager) GetModelConfig(modelID models.ModelID) *EnhancedM
 }
 
 // SetModelConfig sets the configuration for a model
-func (mcm *ModelConfigManager) SetModelConfig(modelID models.ModelID, config *EnhancedModelConfig) {
+func (mcm *ModelConfigManager) SetModelConfig(modelID models.CanonicalModelID, config *EnhancedModelConfig) {
 	mcm.mu.Lock()
 	defer mcm.mu.Unlock()
 
@@ -146,7 +146,7 @@ func (mcm *ModelConfigManager) SetModelConfig(modelID models.ModelID, config *En
 }
 
 // UpdatePerformanceMetrics updates performance metrics for a model
-func (mcm *ModelConfigManager) UpdatePerformanceMetrics(modelID models.ModelID, latency time.Duration, tokens int64, cost float64, success bool) {
+func (mcm *ModelConfigManager) UpdatePerformanceMetrics(modelID models.CanonicalModelID, latency time.Duration, tokens int64, cost float64, success bool) {
 	mcm.mu.Lock()
 	defer mcm.mu.Unlock()
 
@@ -185,7 +185,7 @@ func (mcm *ModelConfigManager) UpdatePerformanceMetrics(modelID models.ModelID, 
 }
 
 // ShouldFallback determines if a model should fallback based on current conditions
-func (mcm *ModelConfigManager) ShouldFallback(modelID models.ModelID, trigger FallbackTrigger) bool {
+func (mcm *ModelConfigManager) ShouldFallback(modelID models.CanonicalModelID, trigger FallbackTrigger) bool {
 	config := mcm.GetModelConfig(modelID)
 	if !config.Fallback.Enabled {
 		return false
@@ -201,7 +201,7 @@ func (mcm *ModelConfigManager) ShouldFallback(modelID models.ModelID, trigger Fa
 }
 
 // GetFallbackModel returns the next fallback model for a given model
-func (mcm *ModelConfigManager) GetFallbackModel(modelID models.ModelID, depth int) (models.ModelID, error) {
+func (mcm *ModelConfigManager) GetFallbackModel(modelID models.CanonicalModelID, depth int) (models.CanonicalModelID, error) {
 	config := mcm.GetModelConfig(modelID)
 
 	if !config.Fallback.Enabled || depth >= config.Fallback.MaxFallbackDepth {
@@ -216,7 +216,7 @@ func (mcm *ModelConfigManager) GetFallbackModel(modelID models.ModelID, depth in
 }
 
 // IsWithinBudget checks if using a model is within cost budget
-func (mcm *ModelConfigManager) IsWithinBudget(modelID models.ModelID, estimatedCost float64) bool {
+func (mcm *ModelConfigManager) IsWithinBudget(modelID models.CanonicalModelID, estimatedCost float64) bool {
 	config := mcm.GetModelConfig(modelID)
 
 	// Check hourly budget
@@ -241,9 +241,9 @@ func (mcm *ModelConfigManager) IsWithinBudget(modelID models.ModelID, estimatedC
 }
 
 // getDefaultConfig returns a default configuration for a model
-func (mcm *ModelConfigManager) getDefaultConfig(modelID models.ModelID) *EnhancedModelConfig {
-	// Get basic model info
-	model, exists := models.SupportedModels[modelID]
+func (mcm *ModelConfigManager) getDefaultConfig(modelID models.CanonicalModelID) *EnhancedModelConfig {
+	// Get canonical model info
+	model, exists := models.GetCanonicalModel(modelID)
 	if !exists {
 		// Return generic default
 		return &EnhancedModelConfig{
@@ -278,22 +278,22 @@ func (mcm *ModelConfigManager) getDefaultConfig(modelID models.ModelID) *Enhance
 		}
 	}
 
-	// Create enhanced config from basic model
+	// Create enhanced config from canonical model
 	config := &EnhancedModelConfig{
-		ContextWindow:      int(model.ContextWindow),
-		MaxOutputTokens:    int(model.DefaultMaxTokens),
-		CostPer1KInput:     model.CostPer1MIn / 1000,
-		CostPer1KOutput:    model.CostPer1MOut / 1000,
-		CostPer1KCached:    model.CostPer1MInCached / 1000,
+		ContextWindow:      model.Limits.ContextWindow,
+		MaxOutputTokens:    model.Limits.MaxOutputTokens,
+		CostPer1KInput:     model.Pricing.InputPrice / 1000,
+		CostPer1KOutput:    model.Pricing.OutputPrice / 1000,
+		CostPer1KCached:    model.Pricing.CacheReadsPrice / 1000,
 		SummarizeThreshold: 0.9,
 
 		// Set capabilities based on model features
-		Capabilities: mcm.inferCapabilities(model),
+		Capabilities: mcm.inferCanonicalCapabilities(model),
 
 		// Default limits
 		Limits: ModelLimits{
 			MaxRequestsPerMinute: 60,
-			MaxTokensPerRequest:  int(model.DefaultMaxTokens),
+			MaxTokensPerRequest:  model.Limits.MaxOutputTokens,
 			MaxConcurrentReqs:    5,
 			RequestTimeout:       30 * time.Second,
 			MaxRetries:           3,
@@ -320,13 +320,13 @@ func (mcm *ModelConfigManager) getDefaultConfig(modelID models.ModelID) *Enhance
 	}
 
 	// Set model-specific optimizations
-	mcm.setModelSpecificDefaults(config, model)
+	mcm.setCanonicalModelSpecificDefaults(config, model)
 
 	return config
 }
 
 // calculateHourlySpending calculates spending for a model in the last hour
-func (mcm *ModelConfigManager) calculateHourlySpending(modelID models.ModelID) float64 {
+func (mcm *ModelConfigManager) calculateHourlySpending(modelID models.CanonicalModelID) float64 {
 	mcm.mu.RLock()
 	defer mcm.mu.RUnlock()
 
@@ -344,7 +344,7 @@ func (mcm *ModelConfigManager) calculateHourlySpending(modelID models.ModelID) f
 }
 
 // calculateDailySpending calculates spending for a model in the last 24 hours
-func (mcm *ModelConfigManager) calculateDailySpending(modelID models.ModelID) float64 {
+func (mcm *ModelConfigManager) calculateDailySpending(modelID models.CanonicalModelID) float64 {
 	mcm.mu.RLock()
 	defer mcm.mu.RUnlock()
 
@@ -360,55 +360,63 @@ func (mcm *ModelConfigManager) calculateDailySpending(modelID models.ModelID) fl
 	return totalSpending
 }
 
-// inferCapabilities infers capabilities from model features
-func (mcm *ModelConfigManager) inferCapabilities(model models.Model) []ModelCapability {
+// inferCanonicalCapabilities infers capabilities from canonical model features
+func (mcm *ModelConfigManager) inferCanonicalCapabilities(model *models.CanonicalModel) []ModelCapability {
 	var capabilities []ModelCapability
 
 	// Always assume code generation for our use case
 	capabilities = append(capabilities, CapabilityCodeGeneration)
 
-	if model.CanReason {
+	if model.Capabilities.SupportsReasoning {
 		capabilities = append(capabilities, CapabilityReasoning)
 	}
 
-	if model.SupportsAttachments {
+	if model.Capabilities.SupportsVision {
 		capabilities = append(capabilities, CapabilityVision)
 	}
 
-	// Infer other capabilities based on model features
-	if model.ContextWindow > 100000 {
-		capabilities = append(capabilities, CapabilityLongContext)
+	if model.Capabilities.SupportsTools {
+		capabilities = append(capabilities, CapabilityToolCalling)
 	}
 
-	// Most modern models support these
-	capabilities = append(capabilities, CapabilityStreaming, CapabilityToolCalling)
+	if model.Capabilities.SupportsStreaming {
+		capabilities = append(capabilities, CapabilityStreaming)
+	}
+
+	// Infer other capabilities based on model features
+	if model.Limits.ContextWindow > 100000 {
+		capabilities = append(capabilities, CapabilityLongContext)
+	}
 
 	return capabilities
 }
 
-// setModelSpecificDefaults sets model-specific optimization defaults
-func (mcm *ModelConfigManager) setModelSpecificDefaults(config *EnhancedModelConfig, model models.Model) {
-	switch model.Provider {
-	case models.ProviderAnthropic:
+// setCanonicalModelSpecificDefaults sets model-specific optimization defaults for canonical models
+func (mcm *ModelConfigManager) setCanonicalModelSpecificDefaults(config *EnhancedModelConfig, model *models.CanonicalModel) {
+	// Set defaults based on model family
+	switch model.Family {
+	case "claude":
 		config.OptimalTemperature = 0.7
 		config.RecommendedMaxTokens = 4096
 		config.PreferredBatchSize = 1
 
-	case models.ProviderOpenAI:
+	case "gpt", "o1", "o3":
 		config.OptimalTemperature = 0.7
 		config.RecommendedMaxTokens = 4096
 		config.PreferredBatchSize = 1
 
-	case models.ProviderGemini:
+	case "gemini":
 		config.OptimalTemperature = 0.9
 		config.RecommendedMaxTokens = 8192
 		config.PreferredBatchSize = 1
 
-	case models.ProviderGROQ:
+	case "llama":
 		config.OptimalTemperature = 0.7
 		config.RecommendedMaxTokens = 8192
 		config.PreferredBatchSize = 1
-		// GROQ is fast, allow higher concurrency
-		config.Limits.MaxConcurrentReqs = 10
+		// GROQ/Llama is fast, allow higher concurrency
+		if _, hasGroq := model.Providers[models.ProviderGroqCanonical]; hasGroq {
+			config.Limits.MaxConcurrentReqs = 10
+		}
 	}
 }

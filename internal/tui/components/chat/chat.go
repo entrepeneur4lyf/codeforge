@@ -255,6 +255,13 @@ func (m *ChatModel) ClearMessages() {
 	m.viewport.GotoTop()
 }
 
+// LoadMessages loads historical messages into the chat view
+func (m *ChatModel) LoadMessages(messages []Message) {
+	m.messages = messages
+	m.updateViewport()
+	// Don't auto-scroll for historical messages
+}
+
 // ScrollUp scrolls the viewport up
 func (m *ChatModel) ScrollUp() {
 	m.viewport.LineUp(3)

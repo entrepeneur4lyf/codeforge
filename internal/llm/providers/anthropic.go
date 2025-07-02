@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
-	"github.com/entrepeneur4lyf/codeforge/internal/llm/models"
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
 )
 
 // AnthropicHandler implements the ApiHandler interface for Anthropic's Claude models
@@ -181,7 +181,7 @@ func (h *AnthropicHandler) CreateMessage(ctx context.Context, systemPrompt strin
 func (h *AnthropicHandler) GetModel() llm.ModelResponse {
 	// Try to get model from registry first
 	registry := models.NewModelRegistry()
-	if canonicalModel, exists := registry.GetModelByProvider(models.ProviderAnthropic, h.options.ModelID); exists {
+	if canonicalModel, exists := registry.GetModelByProvider(models.ProviderAnthropicCanonical, h.options.ModelID); exists {
 		return llm.ModelResponse{
 			ID:   h.options.ModelID,
 			Info: h.convertToLLMModelInfo(canonicalModel),

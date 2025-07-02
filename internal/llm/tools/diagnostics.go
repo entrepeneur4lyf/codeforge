@@ -129,7 +129,6 @@ func waitForLspDiagnostics(ctx context.Context, filePath string, lsps map[string
 	}
 }
 
-
 func getDiagnostics(filePath string, lsps map[string]*lsp.Client) string {
 	fileDiagnostics := []string{}
 	projectDiagnostics := []string{}
@@ -184,8 +183,7 @@ func getDiagnostics(filePath string, lsps map[string]*lsp.Client) string {
 			diagnostic.Message)
 	}
 
-	// For now, only get diagnostics for the current file
-	// TODO: Add support for getting all project diagnostics
+	// Get diagnostics for the specific file
 	uri := fmt.Sprintf("file://%s", filePath)
 	for lspName, client := range lsps {
 		diagnostics := client.GetDiagnostics(uri)
@@ -193,6 +191,30 @@ func getDiagnostics(filePath string, lsps map[string]*lsp.Client) string {
 			for _, diag := range diagnostics {
 				formattedDiag := formatDiagnostic(filePath, diag, lspName)
 				fileDiagnostics = append(fileDiagnostics, formattedDiag)
+			}
+		}
+	}
+
+	// Get all project diagnostics (excluding the current file to avoid duplication)
+	for lspName, client := range lsps {
+		allDiagnostics := client.GetAllDiagnostics()
+		for fileUri, diagnostics := range allDiagnostics {
+			// Skip the current file as we already processed it above
+			if fileUri == uri {
+				continue
+			}
+
+			// Convert URI back to filepath
+			var projectFilePath string
+			if filepath, found := strings.CutPrefix(fileUri, "file://"); found {
+				projectFilePath = filepath
+			} else {
+				projectFilePath = fileUri
+			}
+
+			for _, diag := range diagnostics {
+				formattedDiag := formatDiagnostic(projectFilePath, diag, lspName)
+				projectDiagnostics = append(projectDiagnostics, formattedDiag)
 			}
 		}
 	}

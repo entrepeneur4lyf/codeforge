@@ -3,6 +3,7 @@ package context
 import (
 	"fmt"
 	"log"
+	"maps"
 	"regexp"
 	"strings"
 	"time"
@@ -54,14 +55,14 @@ func NewContextOptimizer(config *OptimizationConfig) *ContextOptimizer {
 
 // OptimizationResult represents the result of context optimization
 type OptimizationResult struct {
-	OriginalMessages     []ConversationMessage  `json:"original_messages"`
-	OptimizedMessages    []ConversationMessage  `json:"optimized_messages"`
-	OriginalTokens       int                    `json:"original_tokens"`
-	OptimizedTokens      int                    `json:"optimized_tokens"`
-	CompressionRatio     float64                `json:"compression_ratio"`
-	OptimizationsApplied []string               `json:"optimizations_applied"`
-	ProcessingTime       time.Duration          `json:"processing_time"`
-	Statistics           map[string]interface{} `json:"statistics"`
+	OriginalMessages     []ConversationMessage `json:"original_messages"`
+	OptimizedMessages    []ConversationMessage `json:"optimized_messages"`
+	OriginalTokens       int                   `json:"original_tokens"`
+	OptimizedTokens      int                   `json:"optimized_tokens"`
+	CompressionRatio     float64               `json:"compression_ratio"`
+	OptimizationsApplied []string              `json:"optimizations_applied"`
+	ProcessingTime       time.Duration         `json:"processing_time"`
+	Statistics           map[string]any        `json:"statistics"`
 }
 
 // OptimizeContext optimizes a conversation context
@@ -75,7 +76,7 @@ func (co *ContextOptimizer) OptimizeContext(messages []ConversationMessage, mode
 	copy(optimized, messages)
 
 	var optimizationsApplied []string
-	statistics := make(map[string]interface{})
+	statistics := make(map[string]any)
 
 	// Count original tokens
 	tokenCounter := NewTokenCounter()
@@ -454,7 +455,7 @@ func (co *ContextOptimizer) removeExcessiveWordRepetition(words []string) []stri
 		}
 
 		for j := start; j <= end; j++ {
-			if j != i && strings.ToLower(words[j]) == strings.ToLower(word) {
+			if j != i && strings.EqualFold(words[j], word) {
 				count++
 			}
 		}
@@ -585,8 +586,8 @@ func (co *ContextOptimizer) calculateTotalLength(messages []ConversationMessage)
 }
 
 // GetOptimizationStats returns optimization statistics
-func (co *ContextOptimizer) GetOptimizationStats(result *OptimizationResult) map[string]interface{} {
-	stats := make(map[string]interface{})
+func (co *ContextOptimizer) GetOptimizationStats(result *OptimizationResult) map[string]any {
+	stats := make(map[string]any)
 
 	stats["original_message_count"] = len(result.OriginalMessages)
 	stats["optimized_message_count"] = len(result.OptimizedMessages)
@@ -597,9 +598,7 @@ func (co *ContextOptimizer) GetOptimizationStats(result *OptimizationResult) map
 	stats["optimizations_applied"] = result.OptimizationsApplied
 
 	// Merge in specific statistics
-	for k, v := range result.Statistics {
-		stats[k] = v
-	}
+	maps.Copy(stats, result.Statistics)
 
 	return stats
 }

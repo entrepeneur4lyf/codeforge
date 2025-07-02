@@ -143,7 +143,7 @@ func (h *GeminiSDKHandler) CreateMessage(ctx context.Context, systemPrompt strin
 }
 
 // getDefaultModelInfo returns default model information for Gemini models
-func (h *GeminiSDKHandler) getDefaultModelInfo(modelID string) llm.ModelInfo {
+func (h *GeminiSDKHandler) getDefaultModelInfo(_ string) llm.ModelInfo {
 	// Default values for Gemini models
 	return llm.ModelInfo{
 		MaxTokens:           4096,
@@ -172,7 +172,7 @@ func GetGeminiModels(ctx context.Context, apiKey string) ([]GeminiModelInfo, err
 }
 
 // getCachedGeminiModels returns cached models if available and fresh
-func getCachedGeminiModels(ctx context.Context, apiKey string, forceRefresh bool) ([]GeminiModelInfo, error) {
+func getCachedGeminiModels(_ context.Context, _ string, forceRefresh bool) ([]GeminiModelInfo, error) {
 	cacheDir := filepath.Join(os.Getenv("HOME"), ".codeforge", "cache")
 	cacheFile := filepath.Join(cacheDir, "gemini_models.json")
 

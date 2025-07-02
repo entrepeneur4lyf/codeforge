@@ -3,8 +3,13 @@ package tools
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -163,9 +168,8 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 
 	// Check if it's an image file
 	isImage, imageType := isImageFile(filePath)
-	// TODO: handle images
 	if isImage {
-		return NewTextErrorResponse(fmt.Sprintf("This is an image file of type: %s\nUse a different tool to process images", imageType)), nil
+		return handleImageFile(filePath, imageType)
 	}
 
 	// Read the file content
@@ -289,6 +293,66 @@ func isImageFile(filePath string) (bool, string) {
 	default:
 		return false, ""
 	}
+}
+
+func handleImageFile(filePath, imageType string) (ToolResponse, error) {
+	// Get file info
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return ToolResponse{}, fmt.Errorf("error getting file info: %w", err)
+	}
+
+	response := fmt.Sprintf("Image File: %s\n", filepath.Base(filePath))
+	response += fmt.Sprintf("Type: %s\n", imageType)
+	response += fmt.Sprintf("Size: %d bytes\n", fileInfo.Size())
+	response += fmt.Sprintf("Modified: %s\n\n", fileInfo.ModTime().Format("2006-01-02 15:04:05"))
+
+	// For SVG files, we can read the content as text
+	if imageType == "SVG" {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			response += "Error reading SVG content: " + err.Error()
+		} else {
+			response += "SVG Content:\n"
+			response += string(content)
+		}
+		return NewTextResponse(response), nil
+	}
+
+	// For other image types, try to get dimensions and optionally encode as base64 for small images
+	file, err := os.Open(filePath)
+	if err != nil {
+		response += "Error opening image: " + err.Error()
+		return NewTextResponse(response), nil
+	}
+	defer file.Close()
+
+	// Try to decode image to get dimensions
+	config, format, err := image.DecodeConfig(file)
+	if err != nil {
+		response += "Error reading image metadata: " + err.Error()
+	} else {
+		response += fmt.Sprintf("Dimensions: %dx%d pixels\n", config.Width, config.Height)
+		response += fmt.Sprintf("Format: %s\n", format)
+	}
+
+	// For small images (< 1MB), provide base64 encoding option
+	const maxSizeForBase64 = 1024 * 1024 // 1MB
+	if fileInfo.Size() < maxSizeForBase64 {
+		file.Seek(0, 0) // Reset file pointer
+		content, err := io.ReadAll(file)
+		if err != nil {
+			response += "\nError reading file for base64 encoding: " + err.Error()
+		} else {
+			encoded := base64.StdEncoding.EncodeToString(content)
+			response += fmt.Sprintf("\nBase64 encoded (for embedding in HTML/CSS):\ndata:image/%s;base64,%s",
+				strings.ToLower(imageType), encoded)
+		}
+	} else {
+		response += "\nImage too large for base64 encoding (>1MB)"
+	}
+
+	return NewTextResponse(response), nil
 }
 
 type LineScanner struct {

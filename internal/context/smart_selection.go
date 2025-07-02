@@ -481,7 +481,7 @@ func (ss *SmartSelector) calculateMessageScores(candidates []ConversationMessage
 }
 
 // calculateIndividualScore calculates the priority score for a single message
-func (ss *SmartSelector) calculateIndividualScore(msg ConversationMessage, now time.Time, avgLength, maxLength float64, timeRange float64, newestTime time.Time) float64 {
+func (ss *SmartSelector) calculateIndividualScore(msg ConversationMessage, _ time.Time, avgLength, maxLength float64, timeRange float64, newestTime time.Time) float64 {
 	var score float64
 
 	msgTime := time.Unix(msg.Timestamp, 0)
@@ -534,7 +534,7 @@ func (ss *SmartSelector) calculateIndividualScore(msg ConversationMessage, now t
 }
 
 // selectOptimalMessages uses a greedy algorithm to select the best messages within token limit
-func (ss *SmartSelector) selectOptimalMessages(scoredCandidates []ScoredMessage, maxTokens int, modelID string) []ConversationMessage {
+func (ss *SmartSelector) selectOptimalMessages(scoredCandidates []ScoredMessage, maxTokens int, _ string) []ConversationMessage {
 	var selected []ConversationMessage
 	currentTokens := 0
 
@@ -641,7 +641,7 @@ func (ss *SmartSelector) getRoleScore(role string) float64 {
 	}
 }
 
-func (ss *SmartSelector) calculateLengthScore(length, avgLength, maxLength float64) float64 {
+func (ss *SmartSelector) calculateLengthScore(length, avgLength, _ float64) float64 {
 	// Optimal length is around average, with penalty for very short or very long
 	if length < avgLength*0.3 {
 		return 5.0 // Too short, likely not very informative

@@ -10,7 +10,9 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/config"
 	"github.com/entrepeneur4lyf/codeforge/internal/graph"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm/prompt"
+	"github.com/entrepeneur4lyf/codeforge/internal/llm/tools"
 	"github.com/entrepeneur4lyf/codeforge/internal/lsp"
+	"github.com/entrepeneur4lyf/codeforge/internal/mcp"
 	"github.com/entrepeneur4lyf/codeforge/internal/models"
 	"github.com/entrepeneur4lyf/codeforge/internal/project"
 )
@@ -32,6 +34,8 @@ type ContextManager struct {
 	// Code intelligence providers
 	codebaseManager *graph.CodebaseManager
 	symbolExtractor *lsp.SymbolExtractor
+	mcpManager      *mcp.MCPManager
+	toolRegistry    *tools.ToolRegistry
 }
 
 // NewContextManager creates a new context manager
@@ -72,6 +76,16 @@ func NewContextManager(cfg *config.Config) *ContextManager {
 	cm.initializeCodeIntelligence(workingDir)
 
 	return cm
+}
+
+// SetMCPManager sets the MCP manager for tool context integration
+func (cm *ContextManager) SetMCPManager(mcpManager *mcp.MCPManager) {
+	cm.mcpManager = mcpManager
+}
+
+// SetToolRegistry sets the tool registry for built-in tool context integration
+func (cm *ContextManager) SetToolRegistry(toolRegistry *tools.ToolRegistry) {
+	cm.toolRegistry = toolRegistry
 }
 
 // ProcessConversation processes a conversation for optimal context management
@@ -470,6 +484,73 @@ func (cm *ContextManager) buildFullContext(messages []ConversationMessage, model
 		})
 	}
 
+	// Add relevant symbols if available
+	if cm.symbolExtractor != nil && len(messages) > 0 {
+		// Extract query from the last user message
+		query := ""
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == "user" {
+				query = messages[i].Content
+				break
+			}
+		}
+		
+		if query != "" {
+			// Get relevant files from the repository context
+			var files []string
+			if cm.baseContext != nil {
+				// Use project files from base context
+				for _, file := range cm.baseContext.Files {
+					files = append(files, file.Path)
+				}
+			}
+			
+			// Limit to reasonable number of files for symbol extraction
+			maxFiles := 20
+			if len(files) > maxFiles {
+				files = files[:maxFiles]
+			}
+			
+			symbols, err := cm.symbolExtractor.GetRelevantSymbols(context.Background(), query, files, 15)
+			if err == nil && len(symbols) > 0 {
+				var symbolsContent strings.Builder
+				symbolsContent.WriteString("## Relevant Code Symbols\n\n")
+				
+				for _, sym := range symbols {
+					symbolsContent.WriteString(fmt.Sprintf("- **%s** (%s) at %s", sym.Name, sym.Kind, sym.Location))
+					if sym.Detail != "" {
+						symbolsContent.WriteString(fmt.Sprintf(" - %s", sym.Detail))
+					}
+					symbolsContent.WriteString("\n")
+					
+					if len(sym.Children) > 0 {
+						symbolsContent.WriteString(fmt.Sprintf("  Children: %s\n", strings.Join(sym.Children, ", ")))
+					}
+				}
+				
+				fullContext = append(fullContext, ConversationMessage{
+					Role:      "system",
+					Content:   symbolsContent.String(),
+					Timestamp: time.Now().Unix(),
+					Metadata:  map[string]interface{}{"type": "symbols", "symbol_count": len(symbols)},
+				})
+				
+				log.Printf("Added %d relevant symbols to context", len(symbols))
+			}
+		}
+	}
+
+	// Add available tools (both built-in and MCP)
+	toolsContext := cm.buildToolsContext()
+	if toolsContext != "" {
+		fullContext = append(fullContext, ConversationMessage{
+			Role:      "system",
+			Content:   toolsContext,
+			Timestamp: time.Now().Unix(),
+			Metadata:  map[string]interface{}{"type": "tools_context"},
+		})
+	}
+
 	// Add original messages
 	fullContext = append(fullContext, messages...)
 
@@ -611,4 +692,69 @@ func (cm *ContextManager) GetCodeContext(ctx context.Context, query string, file
 	}
 	
 	return contextBuilder.String(), nil
+}
+
+// buildToolsContext builds context information about available tools
+func (cm *ContextManager) buildToolsContext() string {
+	var toolsContent strings.Builder
+	hasTools := false
+	
+	// Add built-in tools
+	if cm.toolRegistry != nil {
+		builtinTools := cm.toolRegistry.GetToolInfos()
+		if len(builtinTools) > 0 {
+			hasTools = true
+			toolsContent.WriteString("## Available Tools\n\n")
+			toolsContent.WriteString("You have access to the following tools to help users with their tasks:\n\n")
+			toolsContent.WriteString("### Built-in Tools\n\n")
+			
+			for _, tool := range builtinTools {
+				toolsContent.WriteString(fmt.Sprintf("- **%s**", tool.Name))
+				if tool.Description != "" {
+					toolsContent.WriteString(fmt.Sprintf(" - %s", tool.Description))
+				}
+				toolsContent.WriteString("\n")
+			}
+			toolsContent.WriteString("\n")
+			
+			log.Printf("Added %d built-in tools to context", len(builtinTools))
+		}
+	}
+	
+	// Add MCP tools
+	if cm.mcpManager != nil {
+		mcpTools := cm.mcpManager.GetAllAvailableTools()
+		if len(mcpTools) > 0 {
+			if !hasTools {
+				toolsContent.WriteString("## Available Tools\n\n")
+				toolsContent.WriteString("You have access to the following tools to help users with their tasks:\n\n")
+				hasTools = true
+			}
+			
+			toolsContent.WriteString("### MCP Server Tools\n\n")
+			
+			for serverName, serverTools := range mcpTools {
+				if len(serverTools) > 0 {
+					toolsContent.WriteString(fmt.Sprintf("**%s server:**\n", serverName))
+					
+					for _, tool := range serverTools {
+						toolsContent.WriteString(fmt.Sprintf("- **%s**", tool.Name))
+						if tool.Description != "" {
+							toolsContent.WriteString(fmt.Sprintf(" - %s", tool.Description))
+						}
+						toolsContent.WriteString("\n")
+					}
+					toolsContent.WriteString("\n")
+				}
+			}
+			
+			log.Printf("Added MCP tools context for %d servers with tools", len(mcpTools))
+		}
+	}
+	
+	if hasTools {
+		toolsContent.WriteString("Use these tools as needed to complete user requests. Each tool call should be properly formatted according to the tool's requirements.\n\n")
+	}
+	
+	return toolsContent.String()
 }

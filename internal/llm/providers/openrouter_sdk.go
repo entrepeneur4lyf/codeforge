@@ -130,7 +130,7 @@ func convertRoleToOpenRouter(role string) string {
 }
 
 // getDefaultModelInfo returns default model information for OpenRouter models
-func (h *OpenRouterSDKHandler) getDefaultModelInfo(modelID string) llm.ModelInfo {
+func (h *OpenRouterSDKHandler) getDefaultModelInfo(_ string) llm.ModelInfo {
 	// Default values for OpenRouter models
 	return llm.ModelInfo{
 		MaxTokens:           4096,

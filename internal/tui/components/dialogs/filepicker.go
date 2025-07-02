@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
 	"github.com/entrepeneur4lyf/codeforge/internal/logging"
+	"github.com/entrepeneur4lyf/codeforge/internal/models"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/image"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/util"
@@ -227,12 +228,13 @@ func (f *filepickerCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (f *filepickerCmp) addAttachmentToMessage() (tea.Model, tea.Cmd) {
-	// TODO: Fix GetSelectedModel
-	// modeInfo := GetSelectedModel(config.Get())
-	// if !modeInfo.SupportsAttachments {
-	// 	logging.ErrorPersist(fmt.Sprintf("Model %s doesn't support attachments", modeInfo.Name))
-	// 	return f, nil
-	// }
+	// Check if current model supports attachments
+	provider, modelName := f.app.GetCurrentModel()
+	modelInfo := getSelectedModelInfo(f.app, provider, modelName)
+	if !modelInfo.SupportsAttachments {
+		logging.ErrorPersist(fmt.Sprintf("Model %s doesn't support attachments", modelInfo.Name))
+		return f, nil
+	}
 
 	selectedFilePath := f.selectedFile
 	if !isExtSupported(selectedFilePath) {
@@ -474,4 +476,35 @@ func IsHidden(file string) (bool, error) {
 func isExtSupported(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return (ext == ".jpg" || ext == ".jpeg" || ext == ".webp" || ext == ".png")
+}
+
+// getSelectedModelInfo retrieves model information for the given provider and model name
+func getSelectedModelInfo(app *app.App, provider, modelName string) models.Model {
+	// Get all available models
+	availableModels := app.GetAvailableModels()
+
+	// Find the model that matches the provider and name
+	for _, model := range availableModels {
+		if model.Provider == provider && model.Name == modelName {
+			// Convert to legacy Model struct for compatibility
+			return models.Model{
+				ID:                  models.ModelID(model.ID),
+				Name:                model.Name,
+				Provider:            models.ModelProvider(model.Provider),
+				CostPer1MIn:         model.Info.InputPrice,
+				CostPer1MOut:        model.Info.OutputPrice,
+				ContextWindow:       int64(model.Info.ContextWindow),
+				DefaultMaxTokens:    int64(model.Info.MaxTokens),
+				SupportsAttachments: model.Info.SupportsImages,
+			}
+		}
+	}
+
+	// If not found, return a default model with no attachment support
+	return models.Model{
+		ID:                  models.ModelID("unknown"),
+		Name:                modelName,
+		Provider:            models.ModelProvider(provider),
+		SupportsAttachments: false,
+	}
 }
