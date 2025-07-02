@@ -3,9 +3,11 @@ package git
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/llm"
 	"github.com/entrepeneur4lyf/codeforge/internal/llm/providers"
@@ -259,10 +261,49 @@ func getEnvVar(key string) string {
 	return strings.TrimSpace(os.Getenv(key))
 }
 
-// isOllamaAvailable checks if Ollama is available locally
+// isOllamaAvailable checks if Ollama is available locally with comprehensive detection
 func isOllamaAvailable() bool {
-	// Simple check - could be enhanced to actually ping Ollama
-	return getEnvVar("OLLAMA_HOST") != "" || fileExists("/usr/local/bin/ollama")
+	// Check environment variable for custom host
+	if getEnvVar("OLLAMA_HOST") != "" {
+		return true
+	}
+
+	// Check common installation paths
+	commonPaths := []string{
+		"/usr/local/bin/ollama",
+		"/usr/bin/ollama",
+		"/opt/homebrew/bin/ollama",
+		"/home/linuxbrew/.linuxbrew/bin/ollama",
+	}
+
+	for _, path := range commonPaths {
+		if fileExists(path) {
+			return true
+		}
+	}
+
+	// Check if ollama is in PATH
+	if _, err := exec.LookPath("ollama"); err == nil {
+		return true
+	}
+
+	// Check default service port (11434)
+	if isPortOpen("localhost", 11434) {
+		return true
+	}
+
+	return false
+}
+
+// isPortOpen checks if a port is open and responding
+func isPortOpen(host string, port int) bool {
+	timeout := time.Second * 2
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	return true
 }
 
 // fileExists checks if a file exists

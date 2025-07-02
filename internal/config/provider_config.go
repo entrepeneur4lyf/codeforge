@@ -174,6 +174,17 @@ type ProviderManager struct {
 
 	// Request tracking for rate limiting
 	requestHistory []ProviderRequestRecord
+
+	// Selection tracking for metrics and load balancing
+	selectionCounts  map[models.ModelProvider]int
+	selectionHistory []ProviderSelection
+}
+
+// ProviderSelection tracks provider selection events for analysis
+type ProviderSelection struct {
+	Provider  models.ModelProvider `json:"provider"`
+	Strategy  string               `json:"strategy"`
+	Timestamp time.Time            `json:"timestamp"`
 }
 
 // CircuitBreaker implements circuit breaker pattern for providers

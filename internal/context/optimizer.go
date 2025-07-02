@@ -368,31 +368,190 @@ func (co *ContextOptimizer) truncateLongLines(content string, maxLength int) str
 	return strings.Join(result, "\n")
 }
 
-// removeRepetition removes repetitive content
+// removeRepetition removes repetitive content using advanced pattern detection
 func (co *ContextOptimizer) removeRepetition(content string) string {
-	// Remove repeated phrases (simple approach)
 	words := strings.Fields(content)
 	if len(words) < 4 {
 		return content
 	}
 
-	var result []string
-	for i := 0; i < len(words); i++ {
-		// Check for repeated 3-word phrases
-		if i+5 < len(words) {
-			phrase1 := strings.Join(words[i:i+3], " ")
-			phrase2 := strings.Join(words[i+3:i+6], " ")
+	// Multi-pass repetition removal with different pattern sizes
+	result := co.removeRepeatedPhrases(words, 5) // 5-word phrases
+	result = co.removeRepeatedPhrases(result, 4) // 4-word phrases
+	result = co.removeRepeatedPhrases(result, 3) // 3-word phrases
+	result = co.removeRepeatedPhrases(result, 2) // 2-word phrases
 
-			if phrase1 == phrase2 {
-				// Skip the repeated phrase
-				i += 2
+	// Remove excessive word repetition
+	result = co.removeExcessiveWordRepetition(result)
+
+	// Remove redundant sentences
+	sentences := co.splitIntoSentences(strings.Join(result, " "))
+	uniqueSentences := co.removeDuplicateSentences(sentences)
+
+	return strings.Join(uniqueSentences, " ")
+}
+
+// removeRepeatedPhrases removes repeated phrases of specified length
+func (co *ContextOptimizer) removeRepeatedPhrases(words []string, phraseLength int) []string {
+	if len(words) < phraseLength*2 {
+		return words
+	}
+
+	var result []string
+	seenPhrases := make(map[string]int)
+
+	for i := 0; i < len(words); i++ {
+		// Check if we can form a phrase of the desired length
+		if i+phraseLength <= len(words) {
+			phrase := strings.Join(words[i:i+phraseLength], " ")
+
+			// Track phrase occurrences
+			seenPhrases[phrase]++
+
+			// If this phrase appears too frequently, skip subsequent occurrences
+			if seenPhrases[phrase] > 2 {
+				// Skip this phrase but continue with next word
 				continue
 			}
+
+			// Check for immediate repetition
+			if i+phraseLength*2 <= len(words) {
+				nextPhrase := strings.Join(words[i+phraseLength:i+phraseLength*2], " ")
+				if phrase == nextPhrase {
+					// Skip the repeated phrase
+					i += phraseLength - 1
+					continue
+				}
+			}
 		}
+
 		result = append(result, words[i])
 	}
 
-	return strings.Join(result, " ")
+	return result
+}
+
+// removeExcessiveWordRepetition removes words that repeat too frequently in close proximity
+func (co *ContextOptimizer) removeExcessiveWordRepetition(words []string) []string {
+	if len(words) < 10 {
+		return words
+	}
+
+	var result []string
+	windowSize := 10 // Look at 10-word windows
+
+	for i, word := range words {
+		// Count occurrences of this word in the current window
+		count := 0
+		start := i - windowSize/2
+		end := i + windowSize/2
+
+		if start < 0 {
+			start = 0
+		}
+		if end >= len(words) {
+			end = len(words) - 1
+		}
+
+		for j := start; j <= end; j++ {
+			if j != i && strings.ToLower(words[j]) == strings.ToLower(word) {
+				count++
+			}
+		}
+
+		// Skip if word appears too frequently in window (more than 3 times)
+		if count <= 3 {
+			result = append(result, word)
+		}
+	}
+
+	return result
+}
+
+// splitIntoSentences splits text into sentences for deduplication
+func (co *ContextOptimizer) splitIntoSentences(text string) []string {
+	// Split on sentence boundaries
+	sentences := regexp.MustCompile(`[.!?]+\s+`).Split(text, -1)
+
+	var result []string
+	for _, sentence := range sentences {
+		sentence = strings.TrimSpace(sentence)
+		if len(sentence) > 10 { // Only keep meaningful sentences
+			result = append(result, sentence)
+		}
+	}
+
+	return result
+}
+
+// removeDuplicateSentences removes duplicate or very similar sentences
+func (co *ContextOptimizer) removeDuplicateSentences(sentences []string) []string {
+	var result []string
+	seen := make(map[string]bool)
+
+	for _, sentence := range sentences {
+		// Normalize sentence for comparison
+		normalized := strings.ToLower(strings.TrimSpace(sentence))
+		normalized = regexp.MustCompile(`\s+`).ReplaceAllString(normalized, " ")
+
+		// Check for exact duplicates
+		if seen[normalized] {
+			continue
+		}
+
+		// Check for high similarity with existing sentences
+		tooSimilar := false
+		for existing := range seen {
+			if co.calculateSentenceSimilarity(normalized, existing) > 0.85 {
+				tooSimilar = true
+				break
+			}
+		}
+
+		if !tooSimilar {
+			seen[normalized] = true
+			result = append(result, sentence)
+		}
+	}
+
+	return result
+}
+
+// calculateSentenceSimilarity calculates similarity between two sentences
+func (co *ContextOptimizer) calculateSentenceSimilarity(s1, s2 string) float64 {
+	words1 := strings.Fields(s1)
+	words2 := strings.Fields(s2)
+
+	if len(words1) == 0 || len(words2) == 0 {
+		return 0.0
+	}
+
+	// Count common words
+	wordSet1 := make(map[string]bool)
+	for _, word := range words1 {
+		wordSet1[word] = true
+	}
+
+	commonWords := 0
+	for _, word := range words2 {
+		if wordSet1[word] {
+			commonWords++
+		}
+	}
+
+	// Calculate Jaccard similarity
+	totalUniqueWords := len(wordSet1)
+	for _, word := range words2 {
+		if !wordSet1[word] {
+			totalUniqueWords++
+		}
+	}
+
+	if totalUniqueWords == 0 {
+		return 0.0
+	}
+
+	return float64(commonWords) / float64(totalUniqueWords)
 }
 
 // compressVerboseContent compresses verbose explanations

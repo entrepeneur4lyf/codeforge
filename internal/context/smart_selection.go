@@ -3,8 +3,10 @@ package context
 import (
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/entrepeneur4lyf/codeforge/internal/config"
 )
@@ -407,43 +409,250 @@ func (ss *SmartSelector) containsCode(content string) bool {
 	return false
 }
 
-// fitWithinTokenLimit selects messages that fit within the token limit
+// fitWithinTokenLimit selects messages that fit within the token limit using advanced scoring
 func (ss *SmartSelector) fitWithinTokenLimit(candidates []ConversationMessage, maxTokens int, modelID string) []ConversationMessage {
 	if len(candidates) == 0 {
 		return candidates
 	}
 
-	// Sort candidates by priority (this could be enhanced with more sophisticated scoring)
-	sort.Slice(candidates, func(i, j int) bool {
-		// Prioritize recent messages and those with code
-		iRecent := candidates[i].Timestamp > candidates[j].Timestamp
-		jRecent := candidates[j].Timestamp > candidates[i].Timestamp
-		iCode := ss.containsCode(candidates[i].Content)
-		jCode := ss.containsCode(candidates[j].Content)
+	// Calculate comprehensive scores for each candidate
+	scoredCandidates := ss.calculateMessageScores(candidates, modelID)
 
-		if iCode && !jCode {
-			return true
-		}
-		if !iCode && jCode {
-			return false
-		}
-
-		return iRecent && !jRecent
+	// Sort by score (descending - highest priority first)
+	sort.Slice(scoredCandidates, func(i, j int) bool {
+		return scoredCandidates[i].Score > scoredCandidates[j].Score
 	})
 
-	// Select messages that fit within token limit
-	var selected []ConversationMessage
-	currentTokens := 0
+	// Select messages using greedy algorithm with token budget
+	return ss.selectOptimalMessages(scoredCandidates, maxTokens, modelID)
+}
 
-	for _, candidate := range candidates {
-		msgTokens := ss.tokenCounter.CountMessageTokens(candidate, modelID).TotalTokens
-		if currentTokens+msgTokens <= maxTokens {
-			selected = append(selected, candidate)
-			currentTokens += msgTokens
+// ScoredMessage represents a message with its calculated priority score
+type ScoredMessage struct {
+	Message ConversationMessage
+	Score   float64
+	Tokens  int
+}
+
+// calculateMessageScores calculates comprehensive priority scores for messages
+func (ss *SmartSelector) calculateMessageScores(candidates []ConversationMessage, modelID string) []ScoredMessage {
+	scored := make([]ScoredMessage, len(candidates))
+	now := time.Now()
+
+	// Calculate base metrics for normalization
+	var totalLength, maxLength int
+	var newestTime, oldestTime time.Time
+
+	for i, msg := range candidates {
+		length := len(msg.Content)
+		totalLength += length
+		if length > maxLength {
+			maxLength = length
+		}
+
+		msgTime := time.Unix(msg.Timestamp, 0)
+		if i == 0 || msgTime.After(newestTime) {
+			newestTime = msgTime
+		}
+		if i == 0 || msgTime.Before(oldestTime) {
+			oldestTime = msgTime
 		}
 	}
 
+	avgLength := float64(totalLength) / float64(len(candidates))
+	timeRange := newestTime.Sub(oldestTime).Seconds()
+	if timeRange == 0 {
+		timeRange = 1 // Avoid division by zero
+	}
+
+	// Score each message
+	for i, msg := range candidates {
+		score := ss.calculateIndividualScore(msg, now, avgLength, float64(maxLength), timeRange, newestTime)
+		tokens := ss.tokenCounter.CountMessageTokens(msg, modelID).TotalTokens
+
+		scored[i] = ScoredMessage{
+			Message: msg,
+			Score:   score,
+			Tokens:  tokens,
+		}
+	}
+
+	return scored
+}
+
+// calculateIndividualScore calculates the priority score for a single message
+func (ss *SmartSelector) calculateIndividualScore(msg ConversationMessage, now time.Time, avgLength, maxLength float64, timeRange float64, newestTime time.Time) float64 {
+	var score float64
+
+	msgTime := time.Unix(msg.Timestamp, 0)
+	content := msg.Content
+
+	// 1. Recency Score (0-30 points) - More recent messages are more relevant
+	timeDiff := newestTime.Sub(msgTime).Seconds()
+	recencyScore := 30.0 * (1.0 - (timeDiff / timeRange))
+	if recencyScore < 0 {
+		recencyScore = 0
+	}
+	score += recencyScore
+
+	// 2. Content Type Score (0-25 points) - Code and technical content prioritized
+	contentScore := 0.0
+	if ss.containsCode(content) {
+		contentScore += 15.0
+	}
+	if ss.containsError(content) {
+		contentScore += 10.0 // Error messages are important for debugging
+	}
+	if ss.containsQuestion(content) {
+		contentScore += 8.0 // Questions often need context
+	}
+	if ss.containsDecision(content) {
+		contentScore += 12.0 // Decisions and conclusions are valuable
+	}
+	score += math.Min(contentScore, 25.0)
+
+	// 3. Role Priority Score (0-20 points) - Different roles have different importance
+	roleScore := ss.getRoleScore(msg.Role)
+	score += roleScore
+
+	// 4. Length Score (0-15 points) - Moderate length preferred (not too short, not too long)
+	lengthScore := ss.calculateLengthScore(float64(len(content)), avgLength, maxLength)
+	score += lengthScore
+
+	// 5. Context Relevance Score (0-10 points) - Messages that reference other messages
+	contextScore := 0.0
+	if ss.containsReferences(content) {
+		contextScore += 5.0
+	}
+	if ss.containsFollowUp(content) {
+		contextScore += 5.0
+	}
+	score += contextScore
+
+	// Normalize to 0-100 scale
+	return math.Min(score, 100.0)
+}
+
+// selectOptimalMessages uses a greedy algorithm to select the best messages within token limit
+func (ss *SmartSelector) selectOptimalMessages(scoredCandidates []ScoredMessage, maxTokens int, modelID string) []ConversationMessage {
+	var selected []ConversationMessage
+	currentTokens := 0
+
+	// Greedy selection: take highest scoring messages that fit
+	for _, candidate := range scoredCandidates {
+		if currentTokens+candidate.Tokens <= maxTokens {
+			selected = append(selected, candidate.Message)
+			currentTokens += candidate.Tokens
+		}
+	}
+
+	// If we have room and didn't select enough, try to fit smaller messages
+	if len(selected) < len(scoredCandidates)/2 && currentTokens < int(float64(maxTokens)*0.8) {
+		// Sort remaining by tokens (ascending) to fit more messages
+		remaining := make([]ScoredMessage, 0)
+		selectedMap := make(map[int64]bool)
+
+		for _, sel := range selected {
+			selectedMap[sel.Timestamp] = true
+		}
+
+		for _, candidate := range scoredCandidates {
+			if !selectedMap[candidate.Message.Timestamp] {
+				remaining = append(remaining, candidate)
+			}
+		}
+
+		sort.Slice(remaining, func(i, j int) bool {
+			return remaining[i].Tokens < remaining[j].Tokens
+		})
+
+		for _, candidate := range remaining {
+			if currentTokens+candidate.Tokens <= maxTokens {
+				selected = append(selected, candidate.Message)
+				currentTokens += candidate.Tokens
+			}
+		}
+	}
+
+	// Sort selected messages by timestamp to maintain conversation order
+	sort.Slice(selected, func(i, j int) bool {
+		return selected[i].Timestamp < selected[j].Timestamp
+	})
+
 	return selected
+}
+
+// Helper methods for content analysis
+func (ss *SmartSelector) containsError(content string) bool {
+	errorIndicators := []string{"error", "exception", "failed", "failure", "panic", "crash", "bug", "issue"}
+	contentLower := strings.ToLower(content)
+	for _, indicator := range errorIndicators {
+		if strings.Contains(contentLower, indicator) {
+			return true
+		}
+	}
+	return false
+}
+
+func (ss *SmartSelector) containsQuestion(content string) bool {
+	return strings.Contains(content, "?") ||
+		strings.Contains(strings.ToLower(content), "how") ||
+		strings.Contains(strings.ToLower(content), "what") ||
+		strings.Contains(strings.ToLower(content), "why") ||
+		strings.Contains(strings.ToLower(content), "when") ||
+		strings.Contains(strings.ToLower(content), "where")
+}
+
+func (ss *SmartSelector) containsDecision(content string) bool {
+	decisionWords := []string{"decided", "conclusion", "solution", "resolved", "implemented", "chosen", "selected"}
+	contentLower := strings.ToLower(content)
+	for _, word := range decisionWords {
+		if strings.Contains(contentLower, word) {
+			return true
+		}
+	}
+	return false
+}
+
+func (ss *SmartSelector) containsReferences(content string) bool {
+	return strings.Contains(content, "mentioned") ||
+		strings.Contains(content, "discussed") ||
+		strings.Contains(content, "as you said") ||
+		strings.Contains(content, "referring to")
+}
+
+func (ss *SmartSelector) containsFollowUp(content string) bool {
+	return strings.Contains(strings.ToLower(content), "follow up") ||
+		strings.Contains(strings.ToLower(content), "next step") ||
+		strings.Contains(strings.ToLower(content), "continue") ||
+		strings.Contains(strings.ToLower(content), "additionally")
+}
+
+func (ss *SmartSelector) getRoleScore(role string) float64 {
+	switch strings.ToLower(role) {
+	case "user":
+		return 20.0 // User messages are highest priority
+	case "assistant":
+		return 15.0 // Assistant responses are important
+	case "system":
+		return 10.0 // System messages provide context
+	default:
+		return 5.0 // Unknown roles get minimal score
+	}
+}
+
+func (ss *SmartSelector) calculateLengthScore(length, avgLength, maxLength float64) float64 {
+	// Optimal length is around average, with penalty for very short or very long
+	if length < avgLength*0.3 {
+		return 5.0 // Too short, likely not very informative
+	}
+	if length > avgLength*3.0 {
+		return 8.0 // Too long, might be verbose
+	}
+	if length >= avgLength*0.7 && length <= avgLength*1.5 {
+		return 15.0 // Optimal length range
+	}
+	return 12.0 // Decent length
 }
 
 // preserveOriginalOrder sorts selected messages by their original order

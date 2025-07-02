@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -370,31 +372,201 @@ func (ci *CodeIntelligence) adjustExperienceRewards(experiences []Experience, us
 }
 
 func (ci *CodeIntelligence) findBestStartingNodes(query string, maxNodes int) []string {
-	// Use simple heuristics to find good starting points
-	// This could be enhanced with ML in the future
+	// Advanced multi-criteria node selection with weighted scoring
+	allNodes := ci.graph.GetAllNodes()
+	if len(allNodes) == 0 {
+		return []string{}
+	}
 
-	nodes := []string{}
+	// Score all nodes based on multiple criteria
+	type ScoredNode struct {
+		ID    string
+		Score float64
+	}
 
-	// Find nodes that match the query
-	for _, node := range ci.graph.GetAllNodes() {
-		if len(nodes) >= maxNodes {
+	var scoredNodes []ScoredNode
+	queryLower := strings.ToLower(query)
+	queryTerms := strings.Fields(queryLower)
+
+	for _, node := range allNodes {
+		score := ci.calculateNodeRelevanceScore(node, queryLower, queryTerms)
+		if score > 0 {
+			scoredNodes = append(scoredNodes, ScoredNode{
+				ID:    node.ID,
+				Score: score,
+			})
+		}
+	}
+
+	// Sort by score (descending)
+	sort.Slice(scoredNodes, func(i, j int) bool {
+		return scoredNodes[i].Score > scoredNodes[j].Score
+	})
+
+	// Return top nodes up to maxNodes
+	var result []string
+	for i, scoredNode := range scoredNodes {
+		if i >= maxNodes {
 			break
 		}
+		result = append(result, scoredNode.ID)
+	}
 
-		if ci.nodeMatchesQuery(node, query) {
-			nodes = append(nodes, node.ID)
+	// If no scored matches, use structural importance as fallback
+	if len(result) == 0 {
+		result = ci.selectByStructuralImportance(allNodes, maxNodes)
+	}
+
+	return result
+}
+
+// calculateNodeRelevanceScore calculates comprehensive relevance score for a node
+func (ci *CodeIntelligence) calculateNodeRelevanceScore(node *graph.Node, queryLower string, queryTerms []string) float64 {
+	var score float64
+
+	// 1. Exact name match (highest priority)
+	nodeName := strings.ToLower(node.Name)
+	if nodeName == queryLower {
+		score += 100.0
+	} else if strings.Contains(nodeName, queryLower) {
+		score += 50.0
+	}
+
+	// 2. Term matching in name
+	nameTerms := strings.FieldsFunc(nodeName, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
+	})
+
+	for _, queryTerm := range queryTerms {
+		for _, nameTerm := range nameTerms {
+			if nameTerm == queryTerm {
+				score += 20.0
+			} else if strings.Contains(nameTerm, queryTerm) {
+				score += 10.0
+			}
 		}
 	}
 
-	// If no matches, use some default starting points
-	if len(nodes) == 0 {
-		allNodes := ci.graph.GetAllNodes()
-		if len(allNodes) > 0 {
-			nodes = append(nodes, allNodes[0].ID)
+	// 3. Path relevance
+	pathLower := strings.ToLower(node.Path)
+	if strings.Contains(pathLower, queryLower) {
+		score += 15.0
+	}
+
+	// 4. Type relevance
+	typeLower := strings.ToLower(string(node.Type))
+	for _, queryTerm := range queryTerms {
+		if strings.Contains(typeLower, queryTerm) {
+			score += 12.0
 		}
 	}
 
-	return nodes
+	// 5. Documentation relevance
+	if node.DocComment != "" {
+		docLower := strings.ToLower(node.DocComment)
+		for _, queryTerm := range queryTerms {
+			if strings.Contains(docLower, queryTerm) {
+				score += 8.0
+			}
+		}
+	}
+
+	// 6. Structural importance bonus
+	importance := ci.calculateStructuralImportance(node)
+	score += importance * 5.0
+
+	// 7. Visibility bonus (public APIs are more important)
+	if node.Visibility == "public" {
+		score += 10.0
+	}
+
+	// 8. Recent modification bonus
+	if time.Since(node.LastModified) < 30*24*time.Hour {
+		score += 5.0
+	}
+
+	// 9. Connection density bonus (well-connected nodes are important)
+	// Note: We only have Dependencies field, not Dependents in the Node struct
+	connectionCount := float64(len(node.Dependencies))
+	score += math.Min(connectionCount*2.0, 20.0)
+
+	return score
+}
+
+// calculateStructuralImportance calculates the structural importance of a node
+func (ci *CodeIntelligence) calculateStructuralImportance(node *graph.Node) float64 {
+	var importance float64
+
+	// Base importance by type
+	switch node.Type {
+	case "package", "module":
+		importance += 0.9
+	case "class", "struct", "interface":
+		importance += 0.8
+	case "function", "method":
+		importance += 0.7
+	case "variable", "constant":
+		importance += 0.5
+	default:
+		importance += 0.3
+	}
+
+	// Boost for high connectivity (using available Dependencies field)
+	totalConnections := len(node.Dependencies)
+	if totalConnections > 10 {
+		importance += 0.3
+	} else if totalConnections > 5 {
+		importance += 0.2
+	} else if totalConnections > 2 {
+		importance += 0.1
+	}
+
+	// Boost for public visibility
+	if node.Visibility == "public" {
+		importance += 0.2
+	}
+
+	// Boost for entry points (main functions, exported APIs)
+	if strings.Contains(strings.ToLower(node.Name), "main") ||
+		strings.Contains(strings.ToLower(node.Name), "init") ||
+		strings.Contains(strings.ToLower(node.Name), "start") {
+		importance += 0.3
+	}
+
+	return math.Min(importance, 1.0)
+}
+
+// selectByStructuralImportance selects nodes based on structural importance as fallback
+func (ci *CodeIntelligence) selectByStructuralImportance(nodes []*graph.Node, maxNodes int) []string {
+	type ImportantNode struct {
+		ID         string
+		Importance float64
+	}
+
+	var importantNodes []ImportantNode
+	for _, node := range nodes {
+		importance := ci.calculateStructuralImportance(node)
+		importantNodes = append(importantNodes, ImportantNode{
+			ID:         node.ID,
+			Importance: importance,
+		})
+	}
+
+	// Sort by importance (descending)
+	sort.Slice(importantNodes, func(i, j int) bool {
+		return importantNodes[i].Importance > importantNodes[j].Importance
+	})
+
+	// Return top nodes
+	var result []string
+	for i, node := range importantNodes {
+		if i >= maxNodes {
+			break
+		}
+		result = append(result, node.ID)
+	}
+
+	return result
 }
 
 func (ci *CodeIntelligence) nodeMatchesQuery(node *graph.Node, query string) bool {

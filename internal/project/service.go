@@ -193,40 +193,200 @@ func (s *Service) createPRDFilesDirect(overview *ProjectOverview) error {
 	return nil
 }
 
-// UpdateProjectSummary intelligently updates existing AGENTS.md with current project analysis
+// UpdateProjectSummary intelligently merges existing AGENTS.md with current project analysis
 func (s *Service) UpdateProjectSummary(overview *ProjectOverview, existingContent string) string {
 	// Generate new summary from current analysis
 	newSummary := s.GenerateProjectSummary(overview)
 
-	// For now, do intelligent merging - preserve custom sections but update core info
-	// This is a simplified approach - in the future we could do more sophisticated merging
+	// Parse existing content into structured sections
+	existingSections := s.parseExistingContent(existingContent)
 
-	// Check if existing content has custom sections we should preserve
-	lines := strings.Split(existingContent, "\n")
-	var customSections []string
-	inCustomSection := false
+	// Parse new summary into structured sections
+	newSections := s.parseExistingContent(newSummary)
 
-	for _, line := range lines {
-		// Look for custom sections (anything not in standard template)
-		if strings.HasPrefix(line, "## Custom") || strings.HasPrefix(line, "## Notes") ||
-			strings.HasPrefix(line, "## Additional") || strings.Contains(line, "CUSTOM:") {
-			inCustomSection = true
+	// Merge sections intelligently
+	mergedSections := s.mergeSections(existingSections, newSections)
+
+	// Reconstruct the final content
+	return s.reconstructContent(mergedSections)
+}
+
+// parseExistingContent parses markdown content into structured sections
+func (s *Service) parseExistingContent(content string) map[string]ContentSection {
+	sections := make(map[string]ContentSection)
+	lines := strings.Split(content, "\n")
+
+	var currentSection string
+	var currentContent []string
+	var currentLevel int
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Detect section headers
+		if strings.HasPrefix(trimmed, "#") {
+			// Save previous section if exists
+			if currentSection != "" {
+				sections[currentSection] = ContentSection{
+					Title:     currentSection,
+					Content:   strings.Join(currentContent, "\n"),
+					Level:     currentLevel,
+					LineStart: i - len(currentContent),
+					LineEnd:   i - 1,
+					IsCustom:  s.isCustomSection(currentSection),
+				}
+			}
+
+			// Start new section
+			currentLevel = s.getHeaderLevel(trimmed)
+			currentSection = s.extractHeaderTitle(trimmed)
+			currentContent = []string{}
+		} else if currentSection != "" {
+			currentContent = append(currentContent, line)
 		}
-		if inCustomSection {
-			customSections = append(customSections, line)
-			if strings.TrimSpace(line) == "" && len(customSections) > 1 {
-				inCustomSection = false
+	}
+
+	// Save final section
+	if currentSection != "" {
+		sections[currentSection] = ContentSection{
+			Title:     currentSection,
+			Content:   strings.Join(currentContent, "\n"),
+			Level:     currentLevel,
+			LineStart: len(lines) - len(currentContent),
+			LineEnd:   len(lines) - 1,
+			IsCustom:  s.isCustomSection(currentSection),
+		}
+	}
+
+	return sections
+}
+
+// ContentSection represents a parsed markdown section
+type ContentSection struct {
+	Title     string
+	Content   string
+	Level     int
+	LineStart int
+	LineEnd   int
+	IsCustom  bool
+	Priority  int
+}
+
+// mergeSections intelligently merges existing and new sections
+func (s *Service) mergeSections(existing, new map[string]ContentSection) map[string]ContentSection {
+	merged := make(map[string]ContentSection)
+
+	// Standard sections that should be updated from new analysis
+	standardSections := map[string]bool{
+		"Project Overview":   true,
+		"Architecture":       true,
+		"Key Components":     true,
+		"Technologies":       true,
+		"File Structure":     true,
+		"Dependencies":       true,
+		"Development Status": true,
+		"Recent Changes":     true,
+	}
+
+	// Add all new sections (they have latest analysis)
+	for title, section := range new {
+		merged[title] = section
+	}
+
+	// Preserve custom sections from existing content
+	for title, section := range existing {
+		if section.IsCustom || !standardSections[title] {
+			// Check if this custom section conflicts with new content
+			if _, exists := merged[title]; !exists {
+				merged[title] = section
+			} else {
+				// Rename conflicting custom section
+				newTitle := title + " (Preserved)"
+				merged[newTitle] = section
 			}
 		}
 	}
 
-	// Append custom sections to new summary if they exist
-	if len(customSections) > 0 {
-		newSummary += "\n\n## Preserved Custom Sections\n"
-		newSummary += strings.Join(customSections, "\n")
+	return merged
+}
+
+// reconstructContent rebuilds markdown from merged sections
+func (s *Service) reconstructContent(sections map[string]ContentSection) string {
+	// Define section order for consistent output
+	sectionOrder := []string{
+		"Project Overview",
+		"Architecture",
+		"Key Components",
+		"Technologies",
+		"File Structure",
+		"Dependencies",
+		"Development Status",
+		"Recent Changes",
 	}
 
-	return newSummary
+	var result strings.Builder
+
+	// Add sections in preferred order
+	for _, title := range sectionOrder {
+		if section, exists := sections[title]; exists {
+			result.WriteString(s.formatSection(section))
+			result.WriteString("\n\n")
+			delete(sections, title)
+		}
+	}
+
+	// Add remaining custom sections
+	for _, section := range sections {
+		result.WriteString(s.formatSection(section))
+		result.WriteString("\n\n")
+	}
+
+	return strings.TrimSpace(result.String())
+}
+
+// Helper functions for content parsing and formatting
+func (s *Service) getHeaderLevel(line string) int {
+	count := 0
+	for _, char := range line {
+		if char == '#' {
+			count++
+		} else {
+			break
+		}
+	}
+	return count
+}
+
+func (s *Service) extractHeaderTitle(line string) string {
+	// Remove leading # characters and trim whitespace
+	title := strings.TrimLeft(line, "#")
+	return strings.TrimSpace(title)
+}
+
+func (s *Service) isCustomSection(title string) bool {
+	standardTitles := map[string]bool{
+		"Project Overview":   true,
+		"Architecture":       true,
+		"Key Components":     true,
+		"Technologies":       true,
+		"File Structure":     true,
+		"Dependencies":       true,
+		"Development Status": true,
+		"Recent Changes":     true,
+	}
+
+	return !standardTitles[title] ||
+		strings.Contains(strings.ToLower(title), "custom") ||
+		strings.Contains(strings.ToLower(title), "note") ||
+		strings.Contains(strings.ToLower(title), "additional")
+}
+
+func (s *Service) formatSection(section ContentSection) string {
+	header := strings.Repeat("#", section.Level) + " " + section.Title
+	if strings.TrimSpace(section.Content) == "" {
+		return header
+	}
+	return header + "\n" + section.Content
 }
 
 // HasExistingProject checks if the current directory has project indicators

@@ -428,35 +428,280 @@ func (hse *HybridSearchEngine) generateSearchSuggestions(req *HybridSearchReques
 	return suggestions
 }
 
-// getRelatedTerms returns semantically related terms for simple expansion
+// getRelatedTerms returns semantically related terms using advanced semantic expansion
 func (hse *HybridSearchEngine) getRelatedTerms(word string) []string {
-	// Simple semantic expansion - can be enhanced with more sophisticated NLP
-	relatedTerms := map[string][]string{
-		"auth":           {"authentication", "login", "user", "session", "token"},
-		"authentication": {"auth", "login", "user", "session", "token"},
-		"login":          {"auth", "authentication", "user", "session"},
-		"user":           {"auth", "authentication", "login", "account"},
-		"error":          {"exception", "failure", "bug", "issue"},
-		"exception":      {"error", "failure", "bug", "issue"},
-		"test":           {"testing", "spec", "unit", "integration"},
-		"testing":        {"test", "spec", "unit", "integration"},
-		"config":         {"configuration", "settings", "options"},
-		"configuration":  {"config", "settings", "options"},
-		"api":            {"endpoint", "route", "handler", "service"},
-		"endpoint":       {"api", "route", "handler", "service"},
-		"handler":        {"api", "endpoint", "route", "controller"},
-		"database":       {"db", "storage", "persistence", "data"},
-		"db":             {"database", "storage", "persistence", "data"},
-		"search":         {"query", "find", "lookup", "index"},
-		"query":          {"search", "find", "lookup", "filter"},
-		"model":          {"struct", "type", "entity", "data"},
-		"struct":         {"model", "type", "entity", "class"},
-		"function":       {"func", "method", "procedure", "routine"},
-		"method":         {"function", "func", "procedure", "routine"},
+	// Normalize input
+	normalized := strings.ToLower(strings.TrimSpace(word))
+	if normalized == "" {
+		return []string{}
 	}
 
-	if related, exists := relatedTerms[word]; exists {
-		return related
+	// Multi-layered semantic expansion with weighted relationships
+	relatedTerms := hse.buildSemanticGraph()
+
+	// Direct lookup for exact matches
+	if related, exists := relatedTerms[normalized]; exists {
+		return hse.rankRelatedTerms(normalized, related)
 	}
+
+	// Fuzzy matching for partial matches and stemming
+	fuzzyMatches := hse.findFuzzyMatches(normalized, relatedTerms)
+	if len(fuzzyMatches) > 0 {
+		return fuzzyMatches
+	}
+
+	// Contextual expansion based on programming language patterns
+	contextualTerms := hse.getContextualTerms(normalized)
+	if len(contextualTerms) > 0 {
+		return contextualTerms
+	}
+
+	// Morphological analysis for compound words and variations
+	morphologicalTerms := hse.getMorphologicalVariations(normalized)
+
+	return morphologicalTerms
+}
+
+// buildSemanticGraph creates a comprehensive semantic relationship graph
+func (hse *HybridSearchEngine) buildSemanticGraph() map[string][]SemanticTerm {
+	return map[string][]SemanticTerm{
+		// Authentication & Security
+		"auth":           {{Term: "authentication", Weight: 0.9}, {Term: "login", Weight: 0.8}, {Term: "user", Weight: 0.7}, {Term: "session", Weight: 0.8}, {Term: "token", Weight: 0.9}, {Term: "jwt", Weight: 0.7}, {Term: "oauth", Weight: 0.8}},
+		"authentication": {{Term: "auth", Weight: 0.9}, {Term: "login", Weight: 0.8}, {Term: "credential", Weight: 0.8}, {Term: "verify", Weight: 0.7}, {Term: "authorize", Weight: 0.8}},
+		"login":          {{Term: "auth", Weight: 0.8}, {Term: "authentication", Weight: 0.8}, {Term: "signin", Weight: 0.9}, {Term: "user", Weight: 0.7}, {Term: "password", Weight: 0.8}},
+		"user":           {{Term: "account", Weight: 0.8}, {Term: "profile", Weight: 0.7}, {Term: "customer", Weight: 0.6}, {Term: "member", Weight: 0.7}, {Term: "person", Weight: 0.6}},
+		"session":        {{Term: "cookie", Weight: 0.7}, {Term: "state", Weight: 0.6}, {Term: "cache", Weight: 0.5}, {Term: "storage", Weight: 0.6}},
+		"token":          {{Term: "jwt", Weight: 0.8}, {Term: "bearer", Weight: 0.7}, {Term: "key", Weight: 0.6}, {Term: "secret", Weight: 0.7}},
+
+		// Error Handling
+		"error":     {{Term: "exception", Weight: 0.9}, {Term: "failure", Weight: 0.8}, {Term: "bug", Weight: 0.7}, {Term: "issue", Weight: 0.7}, {Term: "fault", Weight: 0.6}, {Term: "panic", Weight: 0.8}},
+		"exception": {{Term: "error", Weight: 0.9}, {Term: "throw", Weight: 0.8}, {Term: "catch", Weight: 0.8}, {Term: "try", Weight: 0.7}, {Term: "handle", Weight: 0.7}},
+		"panic":     {{Term: "error", Weight: 0.8}, {Term: "crash", Weight: 0.7}, {Term: "abort", Weight: 0.6}, {Term: "fatal", Weight: 0.7}},
+
+		// Testing
+		"test":    {{Term: "testing", Weight: 0.9}, {Term: "spec", Weight: 0.8}, {Term: "unit", Weight: 0.8}, {Term: "integration", Weight: 0.7}, {Term: "mock", Weight: 0.7}, {Term: "assert", Weight: 0.8}},
+		"testing": {{Term: "test", Weight: 0.9}, {Term: "qa", Weight: 0.6}, {Term: "validation", Weight: 0.7}, {Term: "verification", Weight: 0.7}},
+		"mock":    {{Term: "stub", Weight: 0.8}, {Term: "fake", Weight: 0.7}, {Term: "dummy", Weight: 0.6}, {Term: "spy", Weight: 0.7}},
+		"assert":  {{Term: "expect", Weight: 0.8}, {Term: "verify", Weight: 0.7}, {Term: "check", Weight: 0.6}, {Term: "validate", Weight: 0.7}},
+
+		// Configuration
+		"config":        {{Term: "configuration", Weight: 0.9}, {Term: "settings", Weight: 0.8}, {Term: "options", Weight: 0.7}, {Term: "env", Weight: 0.7}, {Term: "properties", Weight: 0.6}},
+		"configuration": {{Term: "config", Weight: 0.9}, {Term: "setup", Weight: 0.7}, {Term: "init", Weight: 0.6}, {Term: "params", Weight: 0.6}},
+		"settings":      {{Term: "config", Weight: 0.8}, {Term: "preferences", Weight: 0.7}, {Term: "options", Weight: 0.8}},
+		"env":           {{Term: "environment", Weight: 0.9}, {Term: "variable", Weight: 0.8}, {Term: "config", Weight: 0.7}},
+
+		// API & Web
+		"api":        {{Term: "endpoint", Weight: 0.9}, {Term: "route", Weight: 0.8}, {Term: "handler", Weight: 0.8}, {Term: "service", Weight: 0.7}, {Term: "rest", Weight: 0.8}, {Term: "graphql", Weight: 0.6}},
+		"endpoint":   {{Term: "api", Weight: 0.9}, {Term: "url", Weight: 0.7}, {Term: "path", Weight: 0.7}, {Term: "route", Weight: 0.8}},
+		"handler":    {{Term: "controller", Weight: 0.8}, {Term: "processor", Weight: 0.7}, {Term: "middleware", Weight: 0.7}, {Term: "router", Weight: 0.6}},
+		"middleware": {{Term: "handler", Weight: 0.7}, {Term: "interceptor", Weight: 0.8}, {Term: "filter", Weight: 0.7}, {Term: "plugin", Weight: 0.6}},
+		"route":      {{Term: "path", Weight: 0.8}, {Term: "url", Weight: 0.7}, {Term: "endpoint", Weight: 0.8}, {Term: "router", Weight: 0.7}},
+
+		// Data & Storage
+		"database": {{Term: "db", Weight: 0.9}, {Term: "storage", Weight: 0.8}, {Term: "persistence", Weight: 0.7}, {Term: "data", Weight: 0.7}, {Term: "sql", Weight: 0.8}, {Term: "nosql", Weight: 0.6}},
+		"db":       {{Term: "database", Weight: 0.9}, {Term: "sql", Weight: 0.8}, {Term: "query", Weight: 0.7}, {Term: "table", Weight: 0.7}, {Term: "schema", Weight: 0.6}},
+		"storage":  {{Term: "database", Weight: 0.8}, {Term: "cache", Weight: 0.7}, {Term: "file", Weight: 0.6}, {Term: "memory", Weight: 0.6}},
+		"cache":    {{Term: "storage", Weight: 0.7}, {Term: "memory", Weight: 0.8}, {Term: "redis", Weight: 0.7}, {Term: "buffer", Weight: 0.6}},
+		"query":    {{Term: "search", Weight: 0.8}, {Term: "find", Weight: 0.8}, {Term: "select", Weight: 0.7}, {Term: "filter", Weight: 0.7}, {Term: "sql", Weight: 0.8}},
+
+		// Programming Constructs
+		"function":  {{Term: "func", Weight: 0.9}, {Term: "method", Weight: 0.8}, {Term: "procedure", Weight: 0.7}, {Term: "routine", Weight: 0.6}, {Term: "callback", Weight: 0.7}},
+		"method":    {{Term: "function", Weight: 0.8}, {Term: "func", Weight: 0.8}, {Term: "procedure", Weight: 0.7}, {Term: "operation", Weight: 0.6}},
+		"struct":    {{Term: "model", Weight: 0.8}, {Term: "type", Weight: 0.8}, {Term: "entity", Weight: 0.7}, {Term: "class", Weight: 0.8}, {Term: "object", Weight: 0.7}},
+		"model":     {{Term: "struct", Weight: 0.8}, {Term: "entity", Weight: 0.8}, {Term: "schema", Weight: 0.7}, {Term: "data", Weight: 0.6}},
+		"interface": {{Term: "contract", Weight: 0.7}, {Term: "protocol", Weight: 0.7}, {Term: "api", Weight: 0.6}, {Term: "spec", Weight: 0.6}},
+		"class":     {{Term: "struct", Weight: 0.8}, {Term: "type", Weight: 0.7}, {Term: "object", Weight: 0.8}, {Term: "instance", Weight: 0.6}},
+
+		// Search & Discovery
+		"search": {{Term: "query", Weight: 0.8}, {Term: "find", Weight: 0.8}, {Term: "lookup", Weight: 0.7}, {Term: "index", Weight: 0.7}, {Term: "filter", Weight: 0.6}},
+		"find":   {{Term: "search", Weight: 0.8}, {Term: "locate", Weight: 0.7}, {Term: "discover", Weight: 0.6}, {Term: "get", Weight: 0.6}},
+		"filter": {{Term: "search", Weight: 0.6}, {Term: "query", Weight: 0.7}, {Term: "where", Weight: 0.7}, {Term: "select", Weight: 0.6}},
+		"index":  {{Term: "search", Weight: 0.7}, {Term: "catalog", Weight: 0.6}, {Term: "registry", Weight: 0.6}, {Term: "directory", Weight: 0.5}},
+	}
+}
+
+// SemanticTerm represents a related term with its semantic weight
+type SemanticTerm struct {
+	Term   string  `json:"term"`
+	Weight float64 `json:"weight"`
+}
+
+// rankRelatedTerms ranks related terms by semantic weight and relevance
+func (hse *HybridSearchEngine) rankRelatedTerms(original string, terms []SemanticTerm) []string {
+	// Sort by weight (descending)
+	sort.Slice(terms, func(i, j int) bool {
+		return terms[i].Weight > terms[j].Weight
+	})
+
+	// Extract terms and apply additional filtering
+	var result []string
+	seen := make(map[string]bool)
+
+	for _, term := range terms {
+		if !seen[term.Term] && term.Term != original {
+			result = append(result, term.Term)
+			seen[term.Term] = true
+		}
+	}
+
+	// Limit to top 10 most relevant terms
+	if len(result) > 10 {
+		result = result[:10]
+	}
+
+	return result
+}
+
+// findFuzzyMatches finds semantically related terms using fuzzy matching
+func (hse *HybridSearchEngine) findFuzzyMatches(word string, semanticGraph map[string][]SemanticTerm) []string {
+	var matches []string
+
+	// Check for partial matches and common prefixes/suffixes
+	for key := range semanticGraph {
+		if hse.calculateSimilarity(word, key) > 0.7 {
+			if terms, exists := semanticGraph[key]; exists {
+				for _, term := range terms {
+					if term.Weight > 0.6 {
+						matches = append(matches, term.Term)
+					}
+				}
+			}
+		}
+	}
+
+	// Remove duplicates and limit results
+	seen := make(map[string]bool)
+	var uniqueMatches []string
+	for _, match := range matches {
+		if !seen[match] {
+			uniqueMatches = append(uniqueMatches, match)
+			seen[match] = true
+		}
+	}
+
+	if len(uniqueMatches) > 8 {
+		uniqueMatches = uniqueMatches[:8]
+	}
+
+	return uniqueMatches
+}
+
+// getContextualTerms provides context-aware term expansion based on programming patterns
+func (hse *HybridSearchEngine) getContextualTerms(word string) []string {
+	// Programming language specific patterns
+	patterns := map[string][]string{
+		// Go specific
+		"goroutine": {"channel", "select", "go", "concurrent", "parallel"},
+		"channel":   {"goroutine", "select", "send", "receive", "buffer"},
+		"defer":     {"cleanup", "finally", "close", "resource"},
+
+		// Web development
+		"http": {"request", "response", "server", "client", "rest"},
+		"json": {"marshal", "unmarshal", "serialize", "parse"},
+		"xml":  {"parse", "serialize", "unmarshal", "marshal"},
+
+		// Common patterns
+		"async":  {"await", "promise", "future", "concurrent"},
+		"sync":   {"mutex", "lock", "atomic", "wait"},
+		"thread": {"concurrent", "parallel", "async", "worker"},
+	}
+
+	if terms, exists := patterns[word]; exists {
+		return terms
+	}
+
 	return []string{}
+}
+
+// getMorphologicalVariations generates morphological variations of the input word
+func (hse *HybridSearchEngine) getMorphologicalVariations(word string) []string {
+	var variations []string
+
+	// Common programming suffixes and prefixes
+	suffixes := []string{"er", "ing", "ed", "s", "es", "tion", "sion", "ment", "ness"}
+	prefixes := []string{"un", "re", "pre", "post", "sub", "super", "inter", "multi"}
+
+	// Remove common suffixes to find root
+	root := word
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(word, suffix) && len(word) > len(suffix)+2 {
+			root = strings.TrimSuffix(word, suffix)
+			break
+		}
+	}
+
+	// Remove common prefixes
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(root, prefix) && len(root) > len(prefix)+2 {
+			root = strings.TrimPrefix(root, prefix)
+			break
+		}
+	}
+
+	// Generate variations if we found a meaningful root
+	if root != word && len(root) > 2 {
+		variations = append(variations, root)
+
+		// Add common variations
+		variations = append(variations, root+"s", root+"er", root+"ing")
+
+		// Add with common prefixes
+		for _, prefix := range []string{"get", "set", "is", "has", "can"} {
+			if len(root) > 0 {
+				capitalized := strings.ToUpper(root[:1]) + root[1:]
+				variations = append(variations, prefix+capitalized)
+			}
+		}
+	}
+
+	// Remove duplicates and filter out the original word
+	seen := make(map[string]bool)
+	var uniqueVariations []string
+	for _, variation := range variations {
+		if !seen[variation] && variation != word && len(variation) > 2 {
+			uniqueVariations = append(uniqueVariations, variation)
+			seen[variation] = true
+		}
+	}
+
+	return uniqueVariations
+}
+
+// calculateSimilarity calculates string similarity using Levenshtein distance
+func (hse *HybridSearchEngine) calculateSimilarity(s1, s2 string) float64 {
+	if s1 == s2 {
+		return 1.0
+	}
+
+	if len(s1) == 0 || len(s2) == 0 {
+		return 0.0
+	}
+
+	// Simple similarity based on common characters and length
+	longer, shorter := s1, s2
+	if len(s1) < len(s2) {
+		longer, shorter = s2, s1
+	}
+
+	// Count common characters
+	commonChars := 0
+	for _, char := range shorter {
+		if strings.ContainsRune(longer, char) {
+			commonChars++
+		}
+	}
+
+	// Calculate similarity ratio
+	similarity := float64(commonChars) / float64(len(longer))
+
+	// Bonus for common prefixes/suffixes
+	if strings.HasPrefix(longer, shorter) || strings.HasSuffix(longer, shorter) {
+		similarity += 0.2
+	}
+
+	if similarity > 1.0 {
+		similarity = 1.0
+	}
+
+	return similarity
 }

@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -382,10 +385,62 @@ func (ds *ModelDiscoveryService) updateProviderPricing(ctx context.Context, prov
 	// Implementation would fetch latest pricing from provider APIs
 }
 
-// parsePrice parses a price string to float64
+// parsePrice parses a price string to float64 with comprehensive error handling
 func parsePrice(priceStr string) float64 {
-	// Simple implementation - in practice, you'd want more robust parsing
-	var price float64
-	fmt.Sscanf(priceStr, "%f", &price)
+	if priceStr == "" {
+		return 0.0
+	}
+
+	// Clean the string - remove common currency symbols and whitespace
+	cleaned := strings.TrimSpace(priceStr)
+	cleaned = strings.ReplaceAll(cleaned, "$", "")
+	cleaned = strings.ReplaceAll(cleaned, "¢", "")
+	cleaned = strings.ReplaceAll(cleaned, "€", "")
+	cleaned = strings.ReplaceAll(cleaned, "£", "")
+	cleaned = strings.ReplaceAll(cleaned, ",", "")
+
+	// Handle scientific notation and decimal formats
+	price, err := strconv.ParseFloat(cleaned, 64)
+	if err != nil {
+		// Try alternative parsing for edge cases
+		if strings.Contains(cleaned, "e") || strings.Contains(cleaned, "E") {
+			// Already handled by ParseFloat
+			return 0.0
+		}
+
+		// Handle fractional formats like "1/1000"
+		if strings.Contains(cleaned, "/") {
+			parts := strings.Split(cleaned, "/")
+			if len(parts) == 2 {
+				numerator, err1 := strconv.ParseFloat(parts[0], 64)
+				denominator, err2 := strconv.ParseFloat(parts[1], 64)
+				if err1 == nil && err2 == nil && denominator != 0 {
+					return numerator / denominator
+				}
+			}
+		}
+
+		// Handle percentage formats
+		if strings.HasSuffix(cleaned, "%") {
+			percentStr := strings.TrimSuffix(cleaned, "%")
+			if percent, err := strconv.ParseFloat(percentStr, 64); err == nil {
+				return percent / 100.0
+			}
+		}
+
+		// Log warning for unparseable price but don't fail
+		log.Printf("Warning: Could not parse price string '%s': %v", priceStr, err)
+		return 0.0
+	}
+
+	// Validate reasonable price range (0 to $1000 per million tokens)
+	if price < 0 {
+		log.Printf("Warning: Negative price detected: %f, setting to 0", price)
+		return 0.0
+	}
+	if price > 1000.0 {
+		log.Printf("Warning: Unusually high price detected: %f", price)
+	}
+
 	return price
 }
