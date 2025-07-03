@@ -26,6 +26,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
+	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/lucasb-eyer/go-colorful v1.2.0
 	github.com/mark3labs/mcp-go v0.32.0
 	github.com/openai/openai-go v1.8.2

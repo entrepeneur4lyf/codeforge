@@ -1,243 +1,243 @@
 package chat
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
 
-// MessageParser parses messages into selectable parts
+// MessageParser parses message content into parts
 type MessageParser struct {
-	// Patterns for different content types
-	codeBlockPattern   *regexp.Regexp
-	toolPattern        *regexp.Regexp
-	toolResultPattern  *regexp.Regexp
-	fileRefPattern     *regexp.Regexp
-	diffPattern        *regexp.Regexp
+	// Regex patterns for different content types
+	codeBlockPattern *regexp.Regexp
+	fileBlockPattern *regexp.Regexp
+	toolPattern      *regexp.Regexp
+	diagPattern      *regexp.Regexp
 }
 
 // NewMessageParser creates a new message parser
 func NewMessageParser() *MessageParser {
 	return &MessageParser{
 		// Match code blocks with optional language
-		codeBlockPattern: regexp.MustCompile("(?s)```([a-zA-Z0-9_+-]*)\n(.*?)```"),
-		
-		// Match tool invocations (common patterns)
-		toolPattern: regexp.MustCompile("(?s)<tool(?:\\s+[^>]*)?>.*?</tool>"),
-		
-		// Match tool results
-		toolResultPattern: regexp.MustCompile("(?s)<tool_result>.*?</tool_result>"),
-		
-		// Match file references (e.g., path/to/file.go:123)
-		fileRefPattern: regexp.MustCompile(`(?m)^[\w/\-_.]+\.\w+(?::\d+)?$`),
-		
-		// Match diff blocks
-		diffPattern: regexp.MustCompile("(?s)```diff\n(.*?)```"),
+		codeBlockPattern: regexp.MustCompile("(?s)```(?:([a-zA-Z0-9_+-]+)\n)?(.+?)```"),
+		// Match file blocks with path and optional line range
+		fileBlockPattern: regexp.MustCompile("(?s)```file:([^\n]+)\n(.+?)```"),
+		// Match tool invocations
+		toolPattern: regexp.MustCompile("(?s)<tool_use>(.*?)</tool_use>"),
+		// Match diagnostics
+		diagPattern: regexp.MustCompile("(?s)<diagnostic[^>]*>(.*?)</diagnostic>"),
 	}
 }
 
-// ParseMessage parses a message into selectable parts
+// ParseMessage parses a message into parts
 func (p *MessageParser) ParseMessage(msg Message) []MessagePart {
-	if msg.Content == "" {
-		return nil
-	}
-	
-	// Track what content has been processed
 	content := msg.Content
 	var parts []MessagePart
-	partIndex := 0
+	lastIndex := 0
 	
-	// Keep track of positions for accurate line numbers
-	processedUntil := 0
-	
-	// First, find all special blocks and their positions
-	type block struct {
-		start    int
-		end      int
+	// Find all special blocks and sort by position
+	type match struct {
+		start   int
+		end     int
 		partType MessagePartType
-		content  string
+		content string
 		metadata map[string]interface{}
 	}
 	
-	var blocks []block
+	var matches []match
 	
-	// Find code blocks
-	for _, match := range p.codeBlockPattern.FindAllStringSubmatchIndex(content, -1) {
-		language := content[match[2]:match[3]]
-		code := content[match[4]:match[5]]
-		
-		blocks = append(blocks, block{
-			start:    match[0],
-			end:      match[1],
-			partType: PartTypeCode,
-			content:  code,
-			metadata: map[string]interface{}{
-				"language": language,
-			},
-		})
+	// Find file blocks
+	for _, m := range p.fileBlockPattern.FindAllStringSubmatchIndex(content, -1) {
+		if len(m) >= 6 {
+			pathInfo := content[m[2]:m[3]]
+			fileContent := content[m[4]:m[5]]
+			
+			matches = append(matches, match{
+				start:    m[0],
+				end:      m[1],
+				partType: PartTypeFile,
+				content:  fileContent,
+				metadata: map[string]interface{}{"path": pathInfo},
+			})
+		}
 	}
 	
 	// Find tool invocations
-	for _, match := range p.toolPattern.FindAllStringIndex(content, -1) {
-		toolContent := content[match[0]:match[1]]
-		blocks = append(blocks, block{
-			start:    match[0],
-			end:      match[1],
-			partType: PartTypeTool,
-			content:  toolContent,
-		})
-	}
-	
-	// Find tool results
-	for _, match := range p.toolResultPattern.FindAllStringIndex(content, -1) {
-		resultContent := content[match[0]:match[1]]
-		blocks = append(blocks, block{
-			start:    match[0],
-			end:      match[1],
-			partType: PartTypeToolResult,
-			content:  resultContent,
-		})
-	}
-	
-	// Find diffs (if not already captured as code blocks)
-	for _, match := range p.diffPattern.FindAllStringSubmatchIndex(content, -1) {
-		// Check if this overlaps with a code block
-		overlaps := false
-		for _, b := range blocks {
-			if b.partType == PartTypeCode && match[0] >= b.start && match[1] <= b.end {
-				overlaps = true
-				break
-			}
-		}
-		
-		if !overlaps {
-			diffContent := content[match[2]:match[3]]
-			blocks = append(blocks, block{
-				start:    match[0],
-				end:      match[1],
-				partType: PartTypeDiff,
-				content:  diffContent,
+	for _, m := range p.toolPattern.FindAllStringSubmatchIndex(content, -1) {
+		if len(m) >= 4 {
+			toolContent := content[m[2]:m[3]]
+			matches = append(matches, match{
+				start:    m[0],
+				end:      m[1],
+				partType: PartTypeTool,
+				content:  toolContent,
+				metadata: nil,
 			})
 		}
 	}
 	
-	// Sort blocks by start position
-	sortBlocks(blocks)
+	// Find diagnostics
+	for _, m := range p.diagPattern.FindAllStringSubmatchIndex(content, -1) {
+		if len(m) >= 4 {
+			diagContent := content[m[2]:m[3]]
+			matches = append(matches, match{
+				start:    m[0],
+				end:      m[1],
+				partType: PartTypeDiagnostic,
+				content:  diagContent,
+				metadata: nil,
+			})
+		}
+	}
 	
-	// Now create parts, including text between blocks
-	currentPos := 0
-	currentLine := 0
-	
-	for _, b := range blocks {
-		// Add text before this block (if any)
-		if b.start > currentPos {
-			textContent := content[currentPos:b.start]
-			textContent = strings.TrimSpace(textContent)
+	// Find code blocks that aren't file blocks
+	for _, m := range p.codeBlockPattern.FindAllStringSubmatchIndex(content, -1) {
+		if len(m) >= 6 {
+			// Check if this is a file block
+			isFileBlock := false
+			for _, fm := range matches {
+				if fm.partType == PartTypeFile && fm.start == m[0] && fm.end == m[1] {
+					isFileBlock = true
+					break
+				}
+			}
 			
-			if textContent != "" {
-				startLine := currentLine
-				endLine := currentLine + strings.Count(textContent, "\n")
+			if !isFileBlock {
+				lang := ""
+				if m[2] != -1 && m[3] != -1 {
+					lang = content[m[2]:m[3]]
+				}
+				codeContent := content[m[4]:m[5]]
 				
+				matches = append(matches, match{
+					start:    m[0],
+					end:      m[1],
+					partType: PartTypeCode,
+					content:  codeContent,
+					metadata: map[string]interface{}{"language": lang},
+				})
+			}
+		}
+	}
+	
+	// Sort matches by start position
+	for i := 0; i < len(matches); i++ {
+		for j := i + 1; j < len(matches); j++ {
+			if matches[j].start < matches[i].start {
+				matches[i], matches[j] = matches[j], matches[i]
+			}
+		}
+	}
+	
+	// Build parts list
+	partIndex := 0
+	for _, m := range matches {
+		// Add text before this match
+		if m.start > lastIndex {
+			textContent := strings.TrimSpace(content[lastIndex:m.start])
+			if textContent != "" {
 				parts = append(parts, MessagePart{
-					MessageID: msg.ID,
-					PartIndex: partIndex,
 					Type:      PartTypeText,
 					Content:   textContent,
-					StartLine: startLine,
-					EndLine:   endLine,
+					MessageID: msg.ID,
+					PartIndex: partIndex,
+					Metadata:  nil,
 				})
 				partIndex++
-				currentLine = endLine + 1
 			}
 		}
 		
-		// Add the special block
-		startLine := currentLine
-		endLine := currentLine + strings.Count(b.content, "\n")
-		
-		part := MessagePart{
+		// Add the matched part
+		parts = append(parts, MessagePart{
+			Type:      m.partType,
+			Content:   m.content,
 			MessageID: msg.ID,
 			PartIndex: partIndex,
-			Type:      b.partType,
-			Content:   b.content,
-			StartLine: startLine,
-			EndLine:   endLine,
-			Metadata:  b.metadata,
-		}
-		
-		parts = append(parts, part)
+			Metadata:  m.metadata,
+		})
 		partIndex++
 		
-		currentPos = b.end
-		currentLine = endLine + 1 + strings.Count(content[b.start:b.end], "\n") - strings.Count(b.content, "\n")
+		lastIndex = m.end
 	}
 	
 	// Add any remaining text
-	if currentPos < len(content) {
-		textContent := content[currentPos:]
-		textContent = strings.TrimSpace(textContent)
-		
+	if lastIndex < len(content) {
+		textContent := strings.TrimSpace(content[lastIndex:])
 		if textContent != "" {
-			startLine := currentLine
-			endLine := currentLine + strings.Count(textContent, "\n")
-			
 			parts = append(parts, MessagePart{
-				MessageID: msg.ID,
-				PartIndex: partIndex,
 				Type:      PartTypeText,
 				Content:   textContent,
-				StartLine: startLine,
-				EndLine:   endLine,
+				MessageID: msg.ID,
+				PartIndex: partIndex,
+				Metadata:  nil,
 			})
 		}
 	}
 	
-	// If no parts were created, treat entire message as one text part
-	if len(parts) == 0 && msg.Content != "" {
+	// If no parts were found, treat the entire content as text
+	if len(parts) == 0 && strings.TrimSpace(content) != "" {
 		parts = append(parts, MessagePart{
+			Type:      PartTypeText,
+			Content:   content,
 			MessageID: msg.ID,
 			PartIndex: 0,
-			Type:      PartTypeText,
-			Content:   msg.Content,
-			StartLine: 0,
-			EndLine:   strings.Count(msg.Content, "\n"),
+			Metadata:  nil,
 		})
 	}
 	
 	return parts
 }
 
-// sortBlocks sorts blocks by start position
-func sortBlocks(blocks []block) {
-	// Simple bubble sort for small arrays
-	for i := 0; i < len(blocks); i++ {
-		for j := i + 1; j < len(blocks); j++ {
-			if blocks[j].start < blocks[i].start {
-				blocks[i], blocks[j] = blocks[j], blocks[i]
-			}
+// ParseToolInvocation parses tool invocation content
+func ParseToolInvocation(content string) (*ToolInvocation, error) {
+	// This is a simplified parser - in production, use proper XML/JSON parsing
+	tool := &ToolInvocation{}
+	
+	// Extract tool name
+	if idx := strings.Index(content, "<name>"); idx != -1 {
+		start := idx + 6
+		if end := strings.Index(content[start:], "</name>"); end != -1 {
+			tool.Name = content[start : start+end]
 		}
 	}
+	
+	// Extract parameters as JSON string
+	if idx := strings.Index(content, "<parameters>"); idx != -1 {
+		start := idx + 12
+		if end := strings.Index(content[start:], "</parameters>"); end != -1 {
+			paramStr := content[start : start+end]
+			// For now, store as a map with "json" key
+			tool.Parameters = map[string]interface{}{"json": paramStr}
+		}
+	}
+	
+	if tool.Name == "" {
+		return nil, fmt.Errorf("no tool name found")
+	}
+	
+	return tool, nil
 }
 
-// ExtractCodeBlocks extracts all code blocks from content
-func (p *MessageParser) ExtractCodeBlocks(content string) []struct {
+// CodeBlock represents a code block with language and content
+type CodeBlock struct {
 	Language string
 	Code     string
-} {
-	var blocks []struct {
-		Language string
-		Code     string
-	}
-	
+}
+
+// ExtractCodeBlocks extracts code blocks from content
+func (p *MessageParser) ExtractCodeBlocks(content string) []CodeBlock {
+	var blocks []CodeBlock
 	matches := p.codeBlockPattern.FindAllStringSubmatch(content, -1)
-	for _, match := range matches {
-		blocks = append(blocks, struct {
-			Language string
-			Code     string
-		}{
-			Language: match[1],
-			Code:     match[2],
-		})
+	for _, m := range matches {
+		if len(m) > 2 {
+			block := CodeBlock{
+				Code: m[2],
+			}
+			if len(m) > 1 && m[1] != "" {
+				block.Language = m[1]
+			}
+			blocks = append(blocks, block)
+		}
 	}
-	
 	return blocks
 }

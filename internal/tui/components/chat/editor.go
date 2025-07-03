@@ -3,6 +3,7 @@ package chat
 import (
 	"strings"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,16 +12,18 @@ import (
 )
 
 type EditorModel struct {
-	width    int
-	height   int
-	textarea textarea.Model
-	theme    theme.Theme
-	focused  bool
+	width       int
+	height      int
+	textarea    textarea.Model
+	theme       theme.Theme
+	focused     bool
+	attachments []string
 }
 
 type EditorKeyMaps struct {
 	Send    key.Binding
 	NewLine key.Binding
+	Paste   key.Binding
 }
 
 var editorKeys = EditorKeyMaps{
@@ -31,6 +34,10 @@ var editorKeys = EditorKeyMaps{
 	NewLine: key.NewBinding(
 		key.WithKeys("shift+enter"),
 		key.WithHelp("shift+enter", "new line"),
+	),
+	Paste: key.NewBinding(
+		key.WithKeys("ctrl+v"),
+		key.WithHelp("ctrl+v", "paste"),
 	),
 }
 
@@ -76,10 +83,15 @@ func (m *EditorModel) send() tea.Cmd {
 	
 	m.textarea.Reset()
 	
+	// Copy attachments and clear them
+	attachments := make([]string, len(m.attachments))
+	copy(attachments, m.attachments)
+	m.attachments = nil
+	
 	return func() tea.Msg {
 		return MessageSubmitMsg{
 			Content:     value,
-			Attachments: []string{}, // TODO: Add attachment support
+			Attachments: attachments,
 		}
 	}
 }
@@ -105,6 +117,11 @@ func (m *EditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Send the message
 				return m, m.send()
 			}
+			
+			// Handle paste
+			if key.Matches(msg, editorKeys.Paste) {
+				return m, m.handlePaste()
+			}
 		}
 	}
 
@@ -119,10 +136,40 @@ func (m *EditorModel) View() string {
 		Bold(true).
 		Foreground(m.theme.Primary())
 
-	return lipgloss.JoinHorizontal(
+	// Build editor view
+	editorView := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		promptStyle.Render(">"),
 		m.textarea.View(),
+	)
+	
+	// If no attachments, return just the editor
+	if len(m.attachments) == 0 {
+		return editorView
+	}
+	
+	// Build attachments view
+	attachmentStyle := lipgloss.NewStyle().
+		Foreground(m.theme.TextMuted()).
+		Padding(0, 0, 0, 3)
+	
+	var attachmentLines []string
+	for _, path := range m.attachments {
+		// Extract filename from path
+		filename := path
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			filename = path[idx+1:]
+		}
+		attachmentLines = append(attachmentLines, "📎 "+filename)
+	}
+	
+	attachmentsView := attachmentStyle.Render(strings.Join(attachmentLines, "\n"))
+	
+	// Join attachments above editor
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		attachmentsView,
+		editorView,
 	)
 }
 
@@ -150,7 +197,33 @@ func (m *EditorModel) Focused() bool {
 	return m.focused
 }
 
-// AddAttachment adds a file attachment (placeholder for now)
+// AddAttachment adds a file attachment
 func (m *EditorModel) AddAttachment(path string) {
-	// TODO: Implement attachment functionality
+	// Check if attachment already exists
+	for _, existing := range m.attachments {
+		if existing == path {
+			return
+		}
+	}
+	m.attachments = append(m.attachments, path)
+}
+
+// RemoveAttachment removes a file attachment
+func (m *EditorModel) RemoveAttachment(path string) {
+	for i, attachment := range m.attachments {
+		if attachment == path {
+			m.attachments = append(m.attachments[:i], m.attachments[i+1:]...)
+			return
+		}
+	}
+}
+
+// ClearAttachments removes all attachments
+func (m *EditorModel) ClearAttachments() {
+	m.attachments = nil
+}
+
+// GetAttachments returns the current attachments
+func (m *EditorModel) GetAttachments() []string {
+	return m.attachments
 }

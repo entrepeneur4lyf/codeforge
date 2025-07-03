@@ -13,7 +13,7 @@ import (
 // MessagesComponent represents an enhanced viewport with part-based selection
 type MessagesComponent interface {
 	tea.Model
-	View(width, height int) string
+	ViewWithSize(width, height int) string
 	SetWidth(width int) tea.Cmd
 	PageUp() (tea.Model, tea.Cmd)
 	PageDown() (tea.Model, tea.Cmd)
@@ -50,6 +50,7 @@ const (
 	PartTypeDiff       MessagePartType = "diff"
 	PartTypeFile       MessagePartType = "file"
 	PartTypeError      MessagePartType = "error"
+	PartTypeDiagnostic MessagePartType = "diagnostic"
 )
 
 // messagesComponent implements the enhanced viewport
@@ -62,6 +63,10 @@ type messagesComponent struct {
 	renderer     *BlockRenderer
 	markdown     *MarkdownRenderer
 	parser       *MessageParser
+	toolRenderer *ToolRenderer
+	diagRenderer *DiagnosticRenderer
+	fileRenderer *FileRenderer
+	asyncRenderer *AsyncRenderer
 	
 	// Selection state
 	selectedMessageIndex int
@@ -75,6 +80,9 @@ type messagesComponent struct {
 	// Rendering state
 	rendering bool
 	tail      bool
+	
+	// Async rendering state
+	asyncTasks map[string]string // messageID -> taskID
 }
 
 // NewMessagesComponent creates a new enhanced messages viewport
@@ -91,10 +99,15 @@ func NewMessagesComponent(theme theme.Theme) MessagesComponent {
 		renderer:             NewBlockRenderer(theme),
 		markdown:             md,
 		parser:               NewMessageParser(),
+		toolRenderer:         NewToolRenderer(theme),
+		diagRenderer:         NewDiagnosticRenderer(theme),
+		fileRenderer:         NewFileRenderer(theme),
+		asyncRenderer:        NewAsyncRenderer(theme),
 		selectedMessageIndex: -1,
 		selectedPartIndex:    -1,
 		selectionMode:        false,
 		tail:                 true,
+		asyncTasks:           make(map[string]string),
 	}
 }
 
@@ -106,6 +119,21 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	
 	switch msg := msg.(type) {
+	case RenderCompleteMsg:
+		// Handle async render completion
+		m.handleRenderComplete(msg)
+		m.renderView()
+		return m, nil
+		
+	case RenderProgressMsg:
+		// Update render progress (could show in status line)
+		// For now, just continue checking
+		if taskID, ok := m.asyncTasks[msg.TaskID]; ok {
+			cmd := m.asyncRenderer.checkRenderStatus(taskID)
+			return m, cmd
+		}
+		return m, nil
+		
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -120,30 +148,79 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 		
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "s", "S":
-			// Toggle selection mode
-			m.selectionMode = !m.selectionMode
-			if m.selectionMode && m.selectedMessageIndex < 0 && len(m.messages) > 0 {
-				// Start selection at first message
-				m.selectedMessageIndex = 0
-				m.selectedPartIndex = 0
-			}
-			m.renderView()
+		switch msg.Type {
+		case tea.KeyRunes:
+			switch string(msg.Runes) {
+			case "s", "S":
+				// Toggle selection mode
+				m.selectionMode = !m.selectionMode
+				if m.selectionMode && m.selectedMessageIndex < 0 && len(m.messages) > 0 {
+					// Start selection at first message
+					m.selectedMessageIndex = 0
+					m.selectedPartIndex = 0
+				}
+				m.renderView()
+				
+			case "n", "N":
+				// Next part in selection mode
+				if m.selectionMode {
+					m.selectNextPart()
+				}
+				
+			case "p", "P":
+				// Previous part in selection mode
+				if m.selectionMode {
+					m.selectPreviousPart()
+				}
 			
-		case "n", "N":
-			// Next part in selection mode
-			if m.selectionMode {
-				m.selectNextPart()
+			case "e", "E":
+				// Toggle expansion of current tool part
+				if m.selectionMode {
+					if part, ok := m.GetSelectedPart(); ok {
+						if part.Type == PartTypeTool || part.Type == PartTypeToolResult {
+							var toolID string
+							if part.Type == PartTypeTool {
+								toolID = fmt.Sprintf("%s-tool-%d", part.MessageID, part.PartIndex)
+							} else {
+								toolID = fmt.Sprintf("%s-result-%d", part.MessageID, part.PartIndex)
+							}
+							m.toolRenderer.ToggleExpanded(toolID)
+							m.renderView()
+						}
+					}
+				}
+			
+			case "x", "X":
+				// Expand all tools
+				if m.selectionMode {
+					// Find all tool IDs
+					for msgIdx, parts := range m.messageParts {
+						if msgIdx >= len(m.messages) {
+							continue
+						}
+						msg := m.messages[msgIdx]
+						for _, part := range parts {
+							if part.Type == PartTypeTool {
+								toolID := fmt.Sprintf("%s-tool-%d", msg.ID, part.PartIndex)
+								m.toolRenderer.SetExpanded(toolID, true)
+							} else if part.Type == PartTypeToolResult {
+								toolID := fmt.Sprintf("%s-result-%d", msg.ID, part.PartIndex)
+								m.toolRenderer.SetExpanded(toolID, true)
+							}
+						}
+					}
+					m.renderView()
+				}
+			
+			case "c", "C":
+				// Collapse all tools
+				if m.selectionMode {
+					m.toolRenderer.CollapseAll()
+					m.renderView()
+				}
 			}
 			
-		case "p", "P":
-			// Previous part in selection mode
-			if m.selectionMode {
-				m.selectPreviousPart()
-			}
-			
-		case "escape":
+		case tea.KeyEsc:
 			// Exit selection mode
 			if m.selectionMode {
 				m.selectionMode = false
@@ -160,7 +237,11 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *messagesComponent) View(width, height int) string {
+func (m *messagesComponent) View() string {
+	return m.viewport.View()
+}
+
+func (m *messagesComponent) ViewWithSize(width, height int) string {
 	if width != m.width || height != m.height {
 		m.width = width
 		m.height = height
@@ -186,8 +267,20 @@ func (m *messagesComponent) renderView() {
 			parts = m.messageParts[i]
 		}
 		
-		// Render message with part highlighting if in selection mode
-		if len(parts) > 0 && m.selectionMode {
+		// Use part-based rendering if we have parts with special types (tools, etc.)
+		// or if we're in selection mode
+		usePartRendering := m.selectionMode
+		if !usePartRendering && len(parts) > 0 {
+			// Check if any parts need special rendering
+			for _, part := range parts {
+				if part.Type != PartTypeText {
+					usePartRendering = true
+					break
+				}
+			}
+		}
+		
+		if usePartRendering && len(parts) > 0 {
 			rendered := m.renderMessageWithParts(msg, parts, i)
 			content.WriteString(rendered)
 		} else {
@@ -205,6 +298,33 @@ func (m *messagesComponent) renderView() {
 }
 
 func (m *messagesComponent) renderMessage(msg Message) string {
+	// Check if async rendering is in progress
+	if taskID, ok := m.asyncTasks[msg.ID]; ok {
+		if task, found := m.asyncRenderer.GetTask(taskID); found {
+			if task.Status == RenderStatusComplete {
+				// Use the async rendered result
+				m.cache.Set(m.cache.GenerateKey(msg.ID, "async-complete"), task.Result)
+				delete(m.asyncTasks, msg.ID)
+				return task.Result
+			} else {
+				// Show status while rendering
+				return m.renderMessageWithStatus(msg, task)
+			}
+		}
+	}
+	
+	// Check if we should use async rendering (for large messages)
+	if len(msg.Content) > 5000 && msg.Role == "assistant" {
+		// Start async rendering
+		placeholder, _ := m.asyncRenderer.QueueRender(msg.ID, msg.Content)
+		// Store the task ID
+		if task, ok := m.asyncRenderer.GetTaskByMessageID(msg.ID); ok {
+			m.asyncTasks[msg.ID] = task.ID
+		}
+		// Return placeholder for now
+		return m.renderMessageWithPlaceholder(msg, placeholder)
+	}
+	
 	// Use cache for regular rendering
 	cacheKey := m.cache.GenerateKey(msg.ID, msg.Role, msg.Content, m.width, "regular")
 	
@@ -288,8 +408,8 @@ func (m *messagesComponent) renderMessageWithParts(msg Message, parts []MessageP
 		isSelected := msgIndex == m.selectedMessageIndex && partIndex == m.selectedPartIndex
 		
 		var partRenderer *BlockRenderer
-		if isSelected {
-			// Highlight selected part
+		if isSelected && part.Type != PartTypeTool && part.Type != PartTypeToolResult && part.Type != PartTypeDiagnostic && part.Type != PartTypeFile {
+			// Highlight selected part (except for tools and diagnostics which have their own rendering)
 			partRenderer = NewBlockRenderer(m.theme,
 				WithBackgroundColor(m.theme.Primary()),
 				WithTextColor(m.theme.Background()),
@@ -301,7 +421,59 @@ func (m *messagesComponent) renderMessageWithParts(msg Message, parts []MessageP
 			switch part.Type {
 			case PartTypeCode:
 				partRenderer = CodeBlockRenderer(m.theme)
-			case PartTypeTool, PartTypeToolResult:
+			case PartTypeTool:
+				// Use tool renderer for tool invocations
+				if tool, err := ParseToolContent(part.Content); err == nil {
+					toolID := fmt.Sprintf("%s-tool-%d", part.MessageID, part.PartIndex)
+					expanded := m.toolRenderer.IsExpanded(toolID)
+					rendered := m.toolRenderer.RenderToolInvocation(*tool, expanded)
+					
+					// Add selection indicator if selected
+					if isSelected {
+						selectionIndicator := NewBlockRenderer(m.theme,
+							WithTextColor(m.theme.Primary()),
+							WithBold(),
+							WithNoBorder(),
+						).Render("▸ Selected")
+						rendered = selectionIndicator + "\n" + rendered
+					}
+					
+					result.WriteString(rendered)
+					if partIndex < len(parts)-1 {
+						result.WriteString("\n")
+					}
+					continue
+				}
+				// Fallback to default rendering if parsing fails
+				partRenderer = NewBlockRenderer(m.theme,
+					WithBackgroundColor(m.theme.BackgroundSecondary()),
+					WithBorder(lipgloss.NormalBorder(), m.theme.Info()),
+					WithPadding(1),
+				)
+			case PartTypeToolResult:
+				// Use tool renderer for tool results
+				if toolResult, err := ParseToolResult(part.Content); err == nil {
+					toolID := fmt.Sprintf("%s-result-%d", part.MessageID, part.PartIndex)
+					expanded := m.toolRenderer.IsExpanded(toolID)
+					rendered := m.toolRenderer.RenderToolResult(*toolResult, expanded)
+					
+					// Add selection indicator if selected
+					if isSelected {
+						selectionIndicator := NewBlockRenderer(m.theme,
+							WithTextColor(m.theme.Primary()),
+							WithBold(),
+							WithNoBorder(),
+						).Render("▸ Selected")
+						rendered = selectionIndicator + "\n" + rendered
+					}
+					
+					result.WriteString(rendered)
+					if partIndex < len(parts)-1 {
+						result.WriteString("\n")
+					}
+					continue
+				}
+				// Fallback to default rendering if parsing fails
 				partRenderer = NewBlockRenderer(m.theme,
 					WithBackgroundColor(m.theme.BackgroundSecondary()),
 					WithBorder(lipgloss.NormalBorder(), m.theme.Info()),
@@ -309,6 +481,75 @@ func (m *messagesComponent) renderMessageWithParts(msg Message, parts []MessageP
 				)
 			case PartTypeError:
 				partRenderer = ErrorMessageRenderer(m.theme)
+			case PartTypeDiagnostic:
+				// Use diagnostic renderer
+				diag, err := ParseDiagnosticContent(part.Content)
+				if err == nil {
+					rendered := m.diagRenderer.RenderDiagnostic(*diag)
+					
+					// Add selection indicator if selected
+					if isSelected {
+						selectionIndicator := NewBlockRenderer(m.theme,
+							WithTextColor(m.theme.Primary()),
+							WithBold(),
+							WithNoBorder(),
+						).Render("▸ Selected")
+						rendered = selectionIndicator + "\n" + rendered
+					}
+					
+					result.WriteString(rendered)
+					if partIndex < len(parts)-1 {
+						result.WriteString("\n")
+					}
+					continue
+				}
+				// Fallback to error renderer if parsing fails
+				partRenderer = ErrorMessageRenderer(m.theme)
+			case PartTypeFile:
+				// Use file renderer
+				var fileContent FileContent
+				fileContent.Content = part.Content
+				
+				// Extract metadata
+				if path, ok := part.Metadata["path"].(string); ok {
+					fileContent.Path = path
+					
+					// Parse line range from path (e.g., file.go:10-20)
+					if parts := strings.Split(path, ":"); len(parts) > 1 {
+						fileContent.Path = parts[0]
+						// Parse line range
+						if lineRange := parts[1]; strings.Contains(lineRange, "-") {
+							var start, end int
+							fmt.Sscanf(lineRange, "%d-%d", &start, &end)
+							fileContent.StartLine = start
+							fileContent.EndLine = end
+						} else {
+							// Single line
+							var line int
+							fmt.Sscanf(lineRange, "%d", &line)
+							fileContent.StartLine = line
+							fileContent.EndLine = line
+						}
+					}
+				}
+				
+				rendered := m.fileRenderer.RenderFile(fileContent)
+				
+				// Add selection indicator if selected
+				if isSelected {
+					selectionIndicator := NewBlockRenderer(m.theme,
+						WithTextColor(m.theme.Primary()),
+						WithBold(),
+						WithNoBorder(),
+					).Render("▸ Selected")
+					rendered = selectionIndicator + "\n" + rendered
+				}
+				
+				result.WriteString(rendered)
+				if partIndex < len(parts)-1 {
+					result.WriteString("\n")
+				}
+				continue
 			default:
 				partRenderer = NewBlockRenderer(m.theme,
 					WithPadding(1),
@@ -494,6 +735,21 @@ func (m *messagesComponent) SetMessages(messages []Message) {
 	m.renderView()
 }
 
+// handleRenderComplete handles completion of async rendering
+func (m *messagesComponent) handleRenderComplete(msg RenderCompleteMsg) {
+	// Find the message that completed
+	for msgID, taskID := range m.asyncTasks {
+		if taskID == msg.TaskID && msgID == msg.MessageID {
+			// Clear from cache to force re-render with new content
+			m.cache.InvalidateMatching(func(key string) bool {
+				return strings.Contains(key, msgID)
+			})
+			delete(m.asyncTasks, msgID)
+			break
+		}
+	}
+}
+
 // parseMessageParts extracts selectable parts from messages
 func (m *messagesComponent) parseMessageParts(messages []Message) [][]MessagePart {
 	result := make([][]MessagePart, len(messages))
@@ -513,4 +769,80 @@ func (m *messagesComponent) parseMessageContent(msg Message) []MessagePart {
 	}
 	
 	return m.parser.ParseMessage(msg)
+}
+
+// renderMessageWithStatus renders a message with async rendering status
+func (m *messagesComponent) renderMessageWithStatus(msg Message, task *RenderTask) string {
+	var result strings.Builder
+	
+	// Render header
+	switch msg.Role {
+	case "user":
+		header := NewBlockRenderer(m.theme,
+			WithTextColor(m.theme.Primary()),
+			WithBold(),
+			WithNoBorder(),
+			WithMarginBottom(0),
+		).Render("You:")
+		result.WriteString(header + "\n")
+		
+	case "assistant":
+		header := NewBlockRenderer(m.theme,
+			WithTextColor(m.theme.Secondary()),
+			WithBold(),
+			WithNoBorder(),
+			WithMarginBottom(0),
+		).Render("Assistant:")
+		result.WriteString(header + "\n")
+	}
+	
+	// Render status
+	status := m.asyncRenderer.RenderStatus(task)
+	statusBlock := NewBlockRenderer(m.theme,
+		WithTextColor(m.theme.Info()),
+		WithBorder(lipgloss.NormalBorder(), m.theme.Info()),
+		WithPadding(1),
+		WithMarginY(1),
+	).Render(status)
+	
+	result.WriteString(statusBlock)
+	
+	// If we have partial content, show it
+	if task.Result != "" {
+		result.WriteString("\n")
+		result.WriteString(task.Result)
+	}
+	
+	return result.String()
+}
+
+// renderMessageWithPlaceholder renders a message with a placeholder
+func (m *messagesComponent) renderMessageWithPlaceholder(msg Message, placeholder string) string {
+	var result strings.Builder
+	
+	// Render header
+	switch msg.Role {
+	case "user":
+		header := NewBlockRenderer(m.theme,
+			WithTextColor(m.theme.Primary()),
+			WithBold(),
+			WithNoBorder(),
+			WithMarginBottom(0),
+		).Render("You:")
+		result.WriteString(header + "\n")
+		
+	case "assistant":
+		header := NewBlockRenderer(m.theme,
+			WithTextColor(m.theme.Secondary()),
+			WithBold(),
+			WithNoBorder(),
+			WithMarginBottom(0),
+		).Render("Assistant:")
+		result.WriteString(header + "\n")
+	}
+	
+	// Add placeholder
+	result.WriteString(placeholder)
+	
+	return result.String()
 }

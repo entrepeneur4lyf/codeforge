@@ -1,13 +1,16 @@
 package dialog
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/entrepeneur4lyf/codeforge/internal/search"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
@@ -20,6 +23,9 @@ type SearchDialog struct {
 	width       int
 	height      int
 	searchType  SearchType
+	searcher    *search.Searcher
+	searching   bool
+	searchErr   error
 }
 
 // SearchType defines the type of search
@@ -43,6 +49,12 @@ type SearchSelectedMsg struct {
 	Result SearchResult
 }
 
+// SearchResultsMsg is sent when search results are ready
+type SearchResultsMsg struct {
+	Results []SearchResult
+	Err     error
+}
+
 // NewSearchDialog creates a new search dialog
 func NewSearchDialog(theme theme.Theme, searchType SearchType) tea.Model {
 	ti := textinput.New()
@@ -61,6 +73,7 @@ func NewSearchDialog(theme theme.Theme, searchType SearchType) tea.Model {
 		searchInput: ti,
 		searchType:  searchType,
 		results:     []SearchResult{},
+		searcher:    search.NewSearcher(),
 	}
 }
 
@@ -76,6 +89,16 @@ func (s *SearchDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		s.width = msg.Width
 		s.height = msg.Height
 		s.searchInput.Width = min(s.width-8, 60)
+
+	case SearchResultsMsg:
+		s.searching = false
+		if msg.Err != nil {
+			s.searchErr = msg.Err
+			s.results = nil
+		} else {
+			s.results = msg.Results
+			s.selected = 0
+		}
 
 	case tea.KeyMsg:
 		switch {
@@ -147,8 +170,20 @@ func (s *SearchDialog) View() string {
 	content.WriteString(inputStyle.Render(s.searchInput.View()))
 	content.WriteString("\n\n")
 
-	// Results
-	if len(s.results) > 0 {
+	// Results or status
+	if s.searching {
+		searchingStyle := lipgloss.NewStyle().
+			Foreground(s.theme.Info()).
+			Width(dialogWidth - 4).
+			Align(lipgloss.Center)
+		content.WriteString(searchingStyle.Render("🔍 Searching..."))
+	} else if s.searchErr != nil {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(s.theme.Error()).
+			Width(dialogWidth - 4).
+			Align(lipgloss.Center)
+		content.WriteString(errorStyle.Render(fmt.Sprintf("❌ Error: %v", s.searchErr)))
+	} else if len(s.results) > 0 {
 		resultsView := s.renderResults(dialogWidth-4, dialogHeight-10)
 		content.WriteString(resultsView)
 	} else if s.searchInput.Value() != "" {
@@ -271,51 +306,64 @@ func (s *SearchDialog) renderResult(result SearchResult, selected bool, width in
 
 func (s *SearchDialog) performSearch() tea.Cmd {
 	query := s.searchInput.Value()
+	if query == "" {
+		return nil
+	}
+
+	s.searching = true
+	s.searchErr = nil
 
 	return func() tea.Msg {
-		// For now, return mock results
-		// In a real implementation, this would call ripgrep or similar
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
 		var results []SearchResult
 
 		if s.searchType == FileSearch {
-			// Mock file search results
-			results = []SearchResult{
-				{Path: "internal/app/app.go"},
-				{Path: "internal/chat/chat.go"},
-				{Path: "internal/llm/handler.go"},
-				{Path: "cmd/codeforge/main.go"},
+			// Search for files
+			files, err := s.searcher.SearchFiles(ctx, query, ".")
+			if err != nil {
+				return SearchResultsMsg{Err: err}
+			}
+			
+			// Convert to SearchResult
+			for _, file := range files {
+				results = append(results, SearchResult{
+					Path: file,
+				})
 			}
 		} else {
-			// Mock text search results
-			results = []SearchResult{
-				{
-					Path:    "internal/app/app.go",
-					Line:    42,
-					Content: "func NewApp(ctx context.Context, appConfig *AppConfig) (*App, error) {",
-					Match:   query,
-				},
-				{
-					Path:    "internal/chat/chat.go",
-					Line:    156,
-					Content: "func (c *ChatSession) ProcessMessage(message string) (string, error) {",
-					Match:   query,
-				},
+			// Search in files
+			opts := search.Options{
+				Query:         query,
+				Path:          ".",
+				CaseSensitive: false,
+				MaxResults:    50,
+				MaxLineLength: 200,
+				UseFuzzy:      true,
+				FuzzyThreshold: 60,
+				Exclude:       []string{"*.bin", "*.exe", "*.so", "*.dylib", "*.dll", ".git/*", "vendor/*", "node_modules/*"},
+			}
+			
+			searchResults, err := s.searcher.Search(ctx, opts)
+			if err != nil {
+				return SearchResultsMsg{Err: err}
+			}
+			
+			// Convert to SearchResult
+			for _, r := range searchResults {
+				results = append(results, SearchResult{
+					Path:    r.Path,
+					Line:    r.Line,
+					Content: r.Content,
+					Match:   r.Match,
+				})
 			}
 		}
 
-		// Filter results based on query
-		var filtered []SearchResult
-		for _, r := range results {
-			if strings.Contains(strings.ToLower(r.Path), strings.ToLower(query)) ||
-				strings.Contains(strings.ToLower(r.Content), strings.ToLower(query)) {
-				filtered = append(filtered, r)
-			}
+		return SearchResultsMsg{
+			Results: results,
 		}
-
-		s.results = filtered
-		s.selected = 0
-
-		return nil
 	}
 }
 
