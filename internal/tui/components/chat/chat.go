@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
@@ -22,6 +21,9 @@ type ChatModel struct {
 	isStreaming  bool
 	streamBuffer strings.Builder
 	ready        bool
+	cache        *MessageCache
+	markdown     *MarkdownRenderer
+	enableMarkdown bool
 }
 
 // Message represents a chat message
@@ -46,13 +48,27 @@ type MessageSentMsg struct {
 	Message   Message
 }
 
+// MessageSubmitMsg is sent when user submits a message
+type MessageSubmitMsg struct {
+	Content     string
+	Attachments []string
+}
+
 // NewChatModel creates a new chat component
-func NewChatModel(theme theme.Theme, sessionID string) *ChatModel {
+func NewChatModel(th theme.Theme, sessionID string) *ChatModel {
+	vp := viewport.New(0, 0)
+	
+	// Create markdown renderer (ignore error for now, will handle in SetSize)
+	md, _ := NewMarkdownRenderer(th, 80) // Default width
+	
 	return &ChatModel{
-		theme:     theme,
+		theme:     th,
 		messages:  []Message{},
 		sessionID: sessionID,
-		viewport:  viewport.New(0, 0),
+		viewport:  vp,
+		cache:     NewMessageCache(100), // Cache up to 100 rendered messages
+		markdown:   md,
+		enableMarkdown: true, // Enable by default
 	}
 }
 
@@ -76,13 +92,28 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport = viewport.New(m.width, m.height)
 			m.viewport.YPosition = 0
 			m.ready = true
+			
+			// Initialize markdown renderer with proper width
+			if m.markdown == nil {
+				m.markdown, _ = NewMarkdownRenderer(m.theme, m.width-4)
+			}
 		} else {
 			m.viewport.Width = m.width
 			m.viewport.Height = m.height
+			
+			// Update markdown width
+			if m.markdown != nil && m.width > 4 {
+				m.markdown.SetWidth(m.width - 4)
+			}
 		}
 
 		// Update content
 		m.updateViewport()
+
+	case MessageSentMsg:
+		if msg.SessionID == m.sessionID {
+			m.addMessage(msg.Message)
+		}
 
 	case StreamUpdateMsg:
 		if msg.SessionID == m.sessionID && m.isStreaming {
@@ -101,19 +132,6 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.updateViewport()
-			// Auto-scroll to bottom
-			m.viewport.GotoBottom()
-		}
-
-	case MessageSentMsg:
-		if msg.SessionID == m.sessionID {
-			m.addMessage(msg.Message)
-
-			// If it's an assistant message, prepare for streaming
-			if msg.Message.Role == "assistant" {
-				m.isStreaming = true
-				m.streamBuffer.Reset()
-			}
 		}
 	}
 
@@ -140,6 +158,18 @@ func (m *ChatModel) addMessage(msg Message) {
 	m.viewport.GotoBottom()
 }
 
+// StartStreaming prepares for streaming a new assistant message
+func (m *ChatModel) StartStreaming() {
+	assistantMsg := Message{
+		ID:      fmt.Sprintf("stream-%d", len(m.messages)),
+		Role:    "assistant",
+		Content: "",
+	}
+	m.addMessage(assistantMsg)
+	m.isStreaming = true
+	m.streamBuffer.Reset()
+}
+
 // updateViewport updates the viewport content with styled messages
 func (m *ChatModel) updateViewport() {
 	var content strings.Builder
@@ -149,137 +179,128 @@ func (m *ChatModel) updateViewport() {
 			content.WriteString("\n\n")
 		}
 
-		// Render message based on role
-		switch msg.Role {
-		case "user":
-			content.WriteString(m.renderUserMessage(msg))
-		case "assistant":
-			content.WriteString(m.renderAssistantMessage(msg))
-		case "system":
-			content.WriteString(m.renderSystemMessage(msg))
+		// Generate cache key based on message properties and current state
+		cacheKey := m.cache.GenerateKey(
+			msg.ID,
+			msg.Role,
+			msg.Content,
+			m.width,
+			// Include streaming state if this is the last message
+			m.isStreaming && i == len(m.messages)-1,
+		)
+
+		// Check cache first
+		if rendered, found := m.cache.Get(cacheKey); found {
+			content.WriteString(rendered)
+			continue
 		}
+
+		// Render message based on role
+		var rendered string
+		
+		// Check for error first
+		if msg.Error != nil {
+			rendered = m.renderErrorMessage(msg)
+		} else {
+			switch msg.Role {
+			case "user":
+				rendered = m.renderUserMessage(msg)
+			case "assistant":
+				rendered = m.renderAssistantMessage(msg)
+			case "system":
+				rendered = m.renderSystemMessage(msg)
+			default:
+				// Fallback for unknown roles
+				rendered = m.renderSystemMessage(msg)
+			}
+		}
+
+		// Cache the rendered message (except for actively streaming messages)
+		if !(m.isStreaming && i == len(m.messages)-1) {
+			m.cache.Set(cacheKey, rendered)
+		}
+
+		content.WriteString(rendered)
 	}
 
 	m.viewport.SetContent(content.String())
 }
 
 func (m *ChatModel) renderUserMessage(msg Message) string {
-	header := lipgloss.NewStyle().
-		Foreground(m.theme.Text()).
-		Bold(true).
-		Render("You:")
+	header := NewBlockRenderer(m.theme,
+		WithTextColor(m.theme.Primary()),
+		WithBold(),
+		WithNoBorder(),
+		WithMarginBottom(0),
+	).Render("You:")
 
-	// Style the content
-	contentStyle := lipgloss.NewStyle().
-		Background(m.theme.Background()).
-		PaddingLeft(2).
-		Width(m.width - 4)
+	content := UserMessageRenderer(m.theme).Render(msg.Content)
 
-	content := contentStyle.Render(msg.Content)
-
-	return fmt.Sprintf("%s\n%s", header, content)
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		content,
+	)
 }
 
 func (m *ChatModel) renderAssistantMessage(msg Message) string {
-	header := lipgloss.NewStyle().
-		Foreground(m.theme.TextMuted()).
-		Bold(true).
-		Render("Assistant:")
+	header := NewBlockRenderer(m.theme,
+		WithTextColor(m.theme.Secondary()),
+		WithBold(),
+		WithNoBorder(),
+		WithMarginBottom(0),
+	).Render("Assistant:")
 
-	// Render markdown if possible
+	// Process content
 	content := msg.Content
-	if m.isStreaming && &msg == &m.messages[len(m.messages)-1] {
-		// Add cursor for streaming
-		content += "▋"
+	
+	// Add cursor for streaming messages
+	isStreamingMsg := m.isStreaming && len(m.messages) > 0 && m.messages[len(m.messages)-1].ID == msg.ID
+	if isStreamingMsg {
+		content = msg.Content + "▋"
 	}
 
-	// Try to render as markdown
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithStylePath("dark"),
-		glamour.WithWordWrap(m.width-4),
-	)
-	if err == nil {
-		rendered, err := renderer.Render(content)
-		if err == nil {
-			content = rendered
+	// Render with markdown if enabled and not streaming
+	var body string
+	if m.enableMarkdown && m.markdown != nil && !isStreamingMsg {
+		if rendered, err := m.markdown.Render(content); err == nil && rendered != "" {
+			// Wrap markdown output in assistant styling
+			body = AssistantMessageRenderer(m.theme).Render(rendered)
+		} else {
+			// Fallback to plain rendering
+			body = AssistantMessageRenderer(m.theme).Render(content)
 		}
+	} else {
+		body = AssistantMessageRenderer(m.theme).Render(content)
 	}
 
-	// Apply padding
-	contentStyle := lipgloss.NewStyle().
-		Background(m.theme.Background()).
-		PaddingLeft(2).
-		Width(m.width - 4)
-
-	styledContent := contentStyle.Render(strings.TrimSpace(content))
-
-	// Add error if present
-	if msg.Error != nil {
-		errorStyle := lipgloss.NewStyle().
-			Foreground(m.theme.Error()).
-			PaddingLeft(2).
-			Width(m.width - 4)
-		errorMsg := errorStyle.Render(fmt.Sprintf("Error: %v", msg.Error))
-		styledContent = fmt.Sprintf("%s\n%s", styledContent, errorMsg)
-	}
-
-	return fmt.Sprintf("%s\n%s", header, styledContent)
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		body,
+	)
 }
 
 func (m *ChatModel) renderSystemMessage(msg Message) string {
-	style := lipgloss.NewStyle().
-		Foreground(m.theme.TextMuted()).
-		Italic(true).
-		PaddingLeft(2).
-		Width(m.width - 4)
-
-	return style.Render(fmt.Sprintf("System: %s", msg.Content))
+	return SystemMessageRenderer(m.theme).Render(fmt.Sprintf("System: %s", msg.Content))
 }
 
-// GetSessionID returns the current session ID
-func (m *ChatModel) GetSessionID() string {
-	return m.sessionID
-}
+func (m *ChatModel) renderErrorMessage(msg Message) string {
+	header := NewBlockRenderer(m.theme,
+		WithTextColor(m.theme.Error()),
+		WithBold(),
+		WithNoBorder(),
+		WithMarginBottom(0),
+	).Render("Error:")
 
-// SetSessionID sets a new session ID and clears messages
-func (m *ChatModel) SetSessionID(sessionID string) {
-	m.sessionID = sessionID
-	m.messages = []Message{}
-	m.updateViewport()
-}
+	errorContent := fmt.Sprintf("%s\n\nError: %v", msg.Content, msg.Error)
+	body := ErrorMessageRenderer(m.theme).Render(errorContent)
 
-// ClearMessages clears all messages
-func (m *ChatModel) ClearMessages() {
-	m.messages = []Message{}
-	m.updateViewport()
-	m.viewport.GotoTop()
-}
-
-// LoadMessages loads historical messages into the chat view
-func (m *ChatModel) LoadMessages(messages []Message) {
-	m.messages = messages
-	m.updateViewport()
-	// Don't auto-scroll for historical messages
-}
-
-// ScrollUp scrolls the viewport up
-func (m *ChatModel) ScrollUp() {
-	m.viewport.LineUp(3)
-}
-
-// ScrollDown scrolls the viewport down
-func (m *ChatModel) ScrollDown() {
-	m.viewport.LineDown(3)
-}
-
-// AtTop returns true if viewport is at the top
-func (m *ChatModel) AtTop() bool {
-	return m.viewport.AtTop()
-}
-
-// AtBottom returns true if viewport is at the bottom
-func (m *ChatModel) AtBottom() bool {
-	return m.viewport.AtBottom()
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		body,
+	)
 }
 
 // SetSize sets the chat view size
@@ -289,6 +310,79 @@ func (m *ChatModel) SetSize(width, height int) {
 	if m.ready {
 		m.viewport.Width = width
 		m.viewport.Height = height
+		
+		// Update markdown renderer width
+		if m.markdown != nil {
+			// Account for padding and borders
+			contentWidth := width - 4
+			if contentWidth > 0 {
+				m.markdown.SetWidth(contentWidth)
+			}
+		}
+		
+		// Clear cache and re-render with new width
+		m.cache.Clear()
 		m.updateViewport()
 	}
+}
+
+// ClearMessages clears all messages
+func (m *ChatModel) ClearMessages() {
+	m.messages = []Message{}
+	m.updateViewport()
+	// Clear cache when clearing messages
+	m.cache.Clear()
+}
+
+// ScrollUp scrolls the viewport up
+func (m *ChatModel) ScrollUp() {
+	// Scroll up by 3 lines
+	for i := 0; i < 3; i++ {
+		m.viewport.ViewUp()
+	}
+}
+
+// ScrollDown scrolls the viewport down  
+func (m *ChatModel) ScrollDown() {
+	// Scroll down by 3 lines
+	for i := 0; i < 3; i++ {
+		m.viewport.ViewDown()
+	}
+}
+
+// SetSessionID sets the session ID
+func (m *ChatModel) SetSessionID(sessionID string) {
+	m.sessionID = sessionID
+	// Clear cache when switching sessions
+	m.cache.Clear()
+	if m.markdown != nil {
+		m.markdown.Clear()
+	}
+}
+
+// EnableMarkdown enables or disables markdown rendering
+func (m *ChatModel) EnableMarkdown(enable bool) {
+	if m.enableMarkdown != enable {
+		m.enableMarkdown = enable
+		// Clear cache and re-render
+		m.cache.Clear()
+		m.updateViewport()
+	}
+}
+
+// IsMarkdownEnabled returns whether markdown rendering is enabled
+func (m *ChatModel) IsMarkdownEnabled() bool {
+	return m.enableMarkdown
+}
+
+// LoadMessages loads messages for display
+func (m *ChatModel) LoadMessages(messages []Message) {
+	m.messages = messages
+	// Clear cache when loading new messages
+	m.cache.Clear()
+	if m.markdown != nil {
+		m.markdown.Clear()
+	}
+	m.updateViewport()
+	m.viewport.GotoBottom()
 }

@@ -51,6 +51,16 @@ func (cr *CommandRouter) RouteDirectCommand(ctx context.Context, userInput strin
 		return cr.handleGitConflictCommand(ctx, userInput)
 	}
 
+	// Search commands - these are direct actions
+	if cr.isSearchCommand(input) {
+		return cr.handleSearchCommand(ctx, userInput)
+	}
+
+	// LSP commands - these are direct actions
+	if cr.isLSPCommand(input) {
+		return cr.handleLSPCommand(ctx, userInput)
+	}
+
 	// Not a direct command
 	return "", false
 }
@@ -461,7 +471,7 @@ func (cr *CommandRouter) isLSPCommand(input string) bool {
 	return false
 }
 
-func (cr *CommandRouter) handleLSPCommand(ctx context.Context, userInput string) (string, bool) {
+func (cr *CommandRouter) handleLSPCommand(_ context.Context, _ string) (string, bool) {
 	lspManager := lsp.GetManager()
 	if lspManager == nil {
 		return "LSP manager not available", true
@@ -495,7 +505,7 @@ func (cr *CommandRouter) isFileCommand(input string) bool {
 	return false
 }
 
-func (cr *CommandRouter) handleFileCommand(ctx context.Context, userInput string) (string, bool) {
+func (cr *CommandRouter) handleFileCommand(_ context.Context, _ string) (string, bool) {
 	// List files in the working directory
 	files, err := cr.listProjectFiles(cr.workingDir)
 	if err != nil {

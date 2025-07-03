@@ -429,8 +429,7 @@ func (cs *ChatSession) processWithAgent(ctx context.Context, userInput string) (
 			}
 
 		case agent.AgentEventCompleted:
-			// Agent completed successfully
-			break
+			// Agent completed successfully - channel will close naturally
 		}
 	}
 
@@ -585,6 +584,8 @@ func (cs *ChatSession) handleCommand(command string) bool {
 		cs.selectEmbedding()
 	case "/history":
 		cs.showHistory()
+	case "/info":
+		cs.showModelInfo()
 	case "/exit", "/quit":
 		if !cs.quiet {
 			fmt.Println("Goodbye!")
@@ -608,6 +609,7 @@ func (cs *ChatSession) showHelp() {
 	fmt.Println("  /help      - Show this help message")
 	fmt.Println("  /clear     - Clear conversation history")
 	fmt.Println("  /model     - Interactive model selector")
+	fmt.Println("  /info      - Show current model information")
 	fmt.Println("  /embedding - Select embedding provider")
 	fmt.Println("  /favorites - Show favorite providers and models")
 	fmt.Println("  /history   - Show conversation history")

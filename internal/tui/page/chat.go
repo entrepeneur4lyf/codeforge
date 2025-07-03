@@ -19,6 +19,8 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/permissions"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/chat"
 	dialog "github.com/entrepeneur4lyf/codeforge/internal/tui/components/dialogs"
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/status"
+	"github.com/entrepeneur4lyf/codeforge/internal/tui/components/toast"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
@@ -37,6 +39,9 @@ type ChatPage struct {
 	chatView    *chat.ChatModel
 	editor      *chat.EditorModel
 	sessions    *chat.SessionsModel
+	toolbar     *chat.ToolbarModel
+	toastMgr    *toast.ToastManager
+	statusBar   *status.Model
 	
 	// State
 	focusIndex  int // 0: chat, 1: editor, 2: sessions
@@ -51,6 +56,14 @@ type ChatPage struct {
 	currentContextTokens int
 	maxContextTokens     int
 	lastProcessedContext *contextmgmt.ProcessedContext
+	
+	// Stream state
+	streamChan  chan string
+	errorChan   chan error
+	doneChan    chan bool
+	
+	// Mouse state
+	hoveredButton int // -1 means no button is hovered
 }
 
 // NewChatPage creates a new chat page
@@ -70,15 +83,19 @@ func NewChatPage(app *app.App, theme theme.Theme) *ChatPage {
 		app:              app,
 		theme:            theme,
 		splitRatio:       0.25,
-		showSidebar:      true,
+		showSidebar:      false,  // Hide sidebar by default
 		chatView:         chat.NewChatModel(theme, sessionID),
 		editor:           chat.NewEditorModel(theme),
 		sessions:         chat.NewSessionsModel(theme),
+		toolbar:          chat.NewToolbarModel(theme),
+		toastMgr:         toast.NewToastManager(theme),
+		statusBar:        status.NewStatusBar(app, theme),
 		focusIndex:       1, // Start with editor focused
 		currentSessionID: sessionID,
 		currentModel:     currentModel,
 		maxContextTokens: maxContext,
 		currentContextTokens: 0,
+		hoveredButton: -1,
 	}
 }
 
@@ -88,6 +105,9 @@ func (p *ChatPage) Init() tea.Cmd {
 		p.chatView.Init(),
 		p.editor.Init(),
 		p.sessions.Init(),
+		p.toolbar.Init(),
+		p.toastMgr.Init(),
+		p.statusBar.Init(),
 	}
 	
 	// Load existing sessions from database and create initial session if none exist
@@ -146,6 +166,68 @@ func (p *ChatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.width = msg.Width
 		p.height = msg.Height
 		p.updateLayout()
+		
+	case tea.MouseMsg:
+		// Status bar is at the bottom, occupying the last 2 lines
+		// The toolbar buttons are on the first line of the status bar
+		statusBarStartY := p.height - 2
+		
+		// Check if mouse is on the toolbar line of status bar
+		if msg.Y == statusBarStartY {
+			// Calculate which button was clicked based on X position
+			// Each button is emoji (2 cells) + padding (2) = 4 cells for emojis
+			buttonWidth := 4
+			buttonIndex := msg.X / buttonWidth
+			
+			if buttonIndex >= 0 && buttonIndex < 5 { // We have 5 buttons
+				p.hoveredButton = buttonIndex
+				
+				if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+					// Handle button click
+					switch buttonIndex {
+					case 0: // New Chat
+						newSession := chat.Session{
+							ID:           fmt.Sprintf("session-%d", time.Now().Unix()),
+							Title:        "New Chat",
+							UpdatedAt:    time.Now(),
+							MessageCount: 0,
+						}
+						cmds = append(cmds, func() tea.Msg {
+							return chat.SessionCreatedMsg{Session: newSession}
+						})
+						// Show toast
+						cmds = append(cmds, toast.NewInfoToast(
+							"New chat created",
+							p.theme,
+							toast.WithDuration(2*time.Second),
+						))
+					case 1: // Clear Chat
+						p.chatView.ClearMessages()
+						cmds = append(cmds, toast.NewSuccessToast(
+							"Chat cleared",
+							p.theme,
+							toast.WithDuration(2*time.Second),
+						))
+					case 2: // Attach File
+						cmds = append(cmds, func() tea.Msg {
+							return tea.KeyMsg{Type: tea.KeyCtrlF}
+						})
+					case 3: // File Picker
+						cmds = append(cmds, func() tea.Msg {
+							return tea.KeyMsg{Type: tea.KeyCtrlP}
+						})
+					case 4: // Select Model
+						cmds = append(cmds, func() tea.Msg {
+							return tea.KeyMsg{Type: tea.KeyCtrlM}
+						})
+					}
+				}
+			} else {
+				p.hoveredButton = -1
+			}
+		} else {
+			p.hoveredButton = -1
+		}
 		
 	case tea.KeyMsg:
 		// Global keys
@@ -230,8 +312,18 @@ func (p *ChatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			})
 			
+			// Start streaming in chat view
+			p.chatView.StartStreaming()
+			
 			// Process with LLM
 			cmds = append(cmds, p.processMessage(msg.Content, msg.Attachments))
+			
+			// Show processing toast
+			cmds = append(cmds, toast.NewInfoToast(
+				"Processing message...",
+				p.theme,
+				toast.WithDuration(2*time.Second),
+			))
 			
 			// Update session info
 			p.sessions.UpdateSession(p.currentSessionID, func(s *chat.Session) {
@@ -289,6 +381,13 @@ func (p *ChatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.currentSessionID = msg.Session.ID
 		p.chatView.SetSessionID(msg.Session.ID)
 		
+		// Show info toast
+		cmds = append(cmds, toast.NewInfoToast(
+			"New chat session created",
+			p.theme,
+			toast.WithDuration(2*time.Second),
+		))
+		
 	case streamCompleteMsg:
 		p.isProcessing = false
 		if msg.error != nil {
@@ -301,6 +400,13 @@ func (p *ChatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Done:      true,
 				}
 			})
+			// Show error toast
+			cmds = append(cmds, toast.NewErrorToast(
+				fmt.Sprintf("Failed to process message: %v", msg.error),
+				p.theme,
+				toast.WithTitle("Error"),
+				toast.WithDuration(5*time.Second),
+			))
 		}
 		
 	case dialog.FileSelectedMsg:
@@ -320,6 +426,52 @@ func (p *ChatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if model.Provider == msg.Provider && model.Name == msg.Model {
 				p.maxContextTokens = model.Info.ContextWindow
 				break
+			}
+		}
+		
+		// Show success toast
+		cmds = append(cmds, toast.NewSuccessToast(
+			fmt.Sprintf("Model changed to %s", msg.Model),
+			p.theme,
+			toast.WithTitle("Model Updated"),
+			toast.WithDuration(3*time.Second),
+		))
+		
+	case chat.ToolbarClickMsg:
+		// Handle toolbar button clicks
+		switch msg.Action {
+		case chat.ActionNewChat:
+			// Create new session
+			newSession := chat.Session{
+				ID:           fmt.Sprintf("session-%d", time.Now().Unix()),
+				Title:        "New Chat",
+				UpdatedAt:    time.Now(),
+				MessageCount: 0,
+			}
+			return p, func() tea.Msg {
+				return chat.SessionCreatedMsg{Session: newSession}
+			}
+			
+		case chat.ActionClearChat:
+			p.chatView.ClearMessages()
+			return p, toast.NewSuccessToast("Chat cleared", p.theme, toast.WithDuration(3*time.Second))
+			
+		case chat.ActionAttachFile:
+			// Open file dialog
+			return p, func() tea.Msg {
+				return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{}, Alt: false, Paste: false}
+			}
+			
+		case chat.ActionFilePicker:
+			// Open file picker
+			return p, func() tea.Msg {
+				return tea.KeyMsg{Type: tea.KeyCtrlP}
+			}
+			
+		case chat.ActionModelSelect:
+			// Open model selection
+			return p, func() tea.Msg {
+				return tea.KeyMsg{Type: tea.KeyCtrlM}
 			}
 		}
 	}
@@ -348,6 +500,24 @@ func (p *ChatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	cmds = append(cmds, cmd)
 	
+	// Update toolbar
+	newToolbar, cmd := p.toolbar.Update(msg)
+	if t, ok := newToolbar.(*chat.ToolbarModel); ok {
+		p.toolbar = t
+	}
+	cmds = append(cmds, cmd)
+	
+	// Update toast manager
+	_, cmd = p.toastMgr.Update(msg)
+	cmds = append(cmds, cmd)
+	
+	// Update status bar
+	newStatus, cmd := p.statusBar.Update(msg)
+	if s, ok := newStatus.(*status.Model); ok {
+		p.statusBar = s
+	}
+	cmds = append(cmds, cmd)
+	
 	return p, tea.Batch(cmds...)
 }
 
@@ -362,7 +532,8 @@ func (p *ChatPage) View() string {
 	}
 	
 	mainWidth := p.width - sidebarWidth
-	chatHeight := p.height - 8 // Reserve space for editor and status
+	// Reserve space: header(2) + editor(3) + status(2) + spacers(1) = 8
+	chatHeight := p.height - 8
 	
 	// Build layout
 	var sections []string
@@ -375,11 +546,12 @@ func (p *ChatPage) View() string {
 	var mainContent string
 	
 	// Chat view
-	p.chatView.SetSize(mainWidth, chatHeight - 2)
+	p.chatView.SetSize(mainWidth, chatHeight)
 	chatContent := p.chatView.View()
 	
 	// Editor
-	p.editor.SetWidth(mainWidth)
+	p.editor.SetWidth(mainWidth - 2) // Account for borders
+	p.editor.SetHeight(3)  // Fixed height for editor
 	editorContent := p.editor.View()
 	
 	// Combine chat and editor
@@ -406,11 +578,27 @@ func (p *ChatPage) View() string {
 	
 	sections = append(sections, mainContent)
 	
-	// Status bar
-	status := p.renderStatusBar()
+	// Status bar with toolbar buttons
+	p.statusBar.SetWidth(p.width)
+	p.statusBar.SetCustomLeft(p.renderToolbarButtons())
+	
+	// Update session info if we have context data
+	if p.lastProcessedContext != nil {
+		tokens := float64(p.lastProcessedContext.FinalTokens)
+		cost := p.calculateSessionCost(tokens)
+		p.statusBar.UpdateSessionInfo(tokens, cost)
+	}
+	
+	status := p.statusBar.View()
 	sections = append(sections, status)
 	
-	return strings.Join(sections, "\n")
+	// Join all sections
+	result := strings.Join(sections, "\n")
+	
+	// Apply toast overlay if there are any toasts
+	result = p.toastMgr.RenderOverlay(result)
+	
+	return result
 }
 
 func (p *ChatPage) renderHeader() string {
@@ -457,8 +645,29 @@ func (p *ChatPage) renderHeader() string {
 		Render(header)
 }
 
+// calculateSessionCost estimates the cost based on token usage
+func (p *ChatPage) calculateSessionCost(tokens float64) float64 {
+	// Get current model info from ModelInfo which contains pricing
+	availableModels := p.app.GetAvailableModels()
+	for _, model := range availableModels {
+		provider, modelName := p.app.GetCurrentModel()
+		if model.Provider == provider && model.Name == modelName {
+			// Use pricing from ModelInfo
+			// Estimate cost: assume 80% input, 20% output for mixed usage
+			inputCost := (tokens * 0.8) * model.Info.InputPrice / 1_000_000
+			outputCost := (tokens * 0.2) * model.Info.OutputPrice / 1_000_000
+			return inputCost + outputCost
+		}
+	}
+	// Default estimate if model not found
+	return tokens * 0.000001 // $1 per million tokens as fallback
+}
+
 func (p *ChatPage) renderStatusBar() string {
-	// Left side - Focus indicator
+	// Toolbar buttons first
+	toolbarButtons := p.renderToolbarButtons()
+	
+	// Focus indicator
 	focusText := ""
 	switch p.focusIndex {
 	case 0:
@@ -492,11 +701,13 @@ func (p *ChatPage) renderStatusBar() string {
 	// Help
 	helpStyle := lipgloss.NewStyle().
 		Foreground(p.theme.TextMuted())
-	help := helpStyle.Render("Tab: Switch Focus • Ctrl+B: Toggle Sidebar • ?: Help")
+	help := helpStyle.Render("Tab: Switch Focus • Ctrl+B: Toggle Sidebar • ?: Help • Enter: Send")
 	
 	// Left side combined
 	leftSide := lipgloss.JoinHorizontal(
 		lipgloss.Top,
+		toolbarButtons,
+		lipgloss.NewStyle().Width(2).Render(""),
 		focus,
 		lipgloss.NewStyle().Width(2).Render(""),
 		status,
@@ -652,6 +863,15 @@ func (p *ChatPage) processMessage(content string, attachments []string) tea.Cmd 
 			defer close(streamChan)
 			defer close(doneChan)
 			
+			// Publish typing start event
+			if p.app.EventManager != nil {
+				p.app.EventManager.PublishChat(events.ChatTypingStart, events.ChatEventPayload{
+					SessionID: p.currentSessionID,
+					Role:      "assistant",
+					Model:     p.currentModel,
+				}, events.WithSessionID(p.currentSessionID))
+			}
+			
 			// Use the new context-aware streaming method
 			p.debugLog("Using context-aware streaming API")
 			processedCtx, respStreamChan, err := p.app.ProcessChatMessageWithStream(
@@ -690,40 +910,38 @@ func (p *ChatPage) processMessage(content string, attachments []string) tea.Cmd 
 			
 			p.debugLog("Streaming completed - Total chunks: %d, Total characters: %d", totalChunks, totalLength)
 			p.debugLog("=== END MESSAGE REQUEST ===\n")
+			
+			// Publish typing stop event
+			if p.app.EventManager != nil {
+				p.app.EventManager.PublishChat(events.ChatTypingStop, events.ChatEventPayload{
+					SessionID: p.currentSessionID,
+					Role:      "assistant",
+					Model:     p.currentModel,
+				}, events.WithSessionID(p.currentSessionID))
+			}
+			
 			doneChan <- true
 		}()
 		
-		// Return command that processes stream updates
-		return func() tea.Msg {
-			for {
-				select {
-				case chunk, ok := <-streamChan:
-					if !ok {
-						return streamCompleteMsg{}
-					}
-					if chunk != "" {
-						// Send non-blocking update
-						go func(c string) {
-							p.app.EventManager.PublishSystem(events.SystemHealthCheck, events.SystemEventPayload{
-								Component: "tui_chat",
-								Status:    "streaming",
-								Message:   "Stream chunk received",
-								Metadata: map[string]interface{}{
-									"session_id": p.currentSessionID,
-									"chunk":      c,
-								},
-							})
-						}(chunk)
-						
-						return chat.StreamUpdateMsg{
-							SessionID: p.currentSessionID,
-							Content:   chunk,
-							Done:      false,
-						}
-					}
-					
-				case err := <-errorChan:
-					return streamCompleteMsg{error: err}
+		// Store stream state
+		p.streamChan = streamChan
+		p.errorChan = errorChan
+		p.doneChan = doneChan
+		
+		// Return a ticker that checks for updates
+		return tea.Tick(time.Millisecond*50, func(t time.Time) tea.Msg {
+			select {
+			case chunk, ok := <-streamChan:
+				if !ok {
+					return streamCompleteMsg{}
+				}
+				return chat.StreamUpdateMsg{
+					SessionID: p.currentSessionID,
+					Content:   chunk,
+					Done:      false,
+				}
+			case err := <-errorChan:
+				return streamCompleteMsg{error: err}
 					
 				case <-doneChan:
 					return tea.Batch(
@@ -741,11 +959,11 @@ func (p *ChatPage) processMessage(content string, attachments []string) tea.Cmd 
 					
 				case <-time.After(100 * time.Millisecond):
 					// Continue checking
+					return nil
 				}
-			}
+			})
 		}
 	}
-}
 
 // Messages
 type streamCompleteMsg struct {
@@ -767,6 +985,79 @@ func (p *ChatPage) getModelInfo() string {
 	}
 	
 	return modelName
+}
+
+// renderToolbarButtons renders clickable buttons in the status bar
+func (p *ChatPage) renderToolbarButtons() string {
+	buttons := []struct {
+		icon    string
+		tooltip string
+		action  func() tea.Cmd
+	}{
+		{"➕", "New Chat", func() tea.Cmd {
+			return func() tea.Msg {
+				newSession := chat.Session{
+					ID:           fmt.Sprintf("session-%d", time.Now().Unix()),
+					Title:        "New Chat",
+					UpdatedAt:    time.Now(),
+					MessageCount: 0,
+				}
+				return chat.SessionCreatedMsg{Session: newSession}
+			}
+		}},
+		{"🗑", "Clear Chat", func() tea.Cmd {
+			p.chatView.ClearMessages()
+			return nil
+		}},
+		{"📎", "Attach File", func() tea.Cmd {
+			return func() tea.Msg {
+				return tea.KeyMsg{Type: tea.KeyCtrlF}
+			}
+		}},
+		{"📁", "File Picker", func() tea.Cmd {
+			return func() tea.Msg {
+				return tea.KeyMsg{Type: tea.KeyCtrlP}
+			}
+		}},
+		{"🤖", "Select Model", func() tea.Cmd {
+			return func() tea.Msg {
+				return tea.KeyMsg{Type: tea.KeyCtrlM}
+			}
+		}},
+	}
+	
+	var renderedButtons []string
+	for i, btn := range buttons {
+		style := lipgloss.NewStyle().
+			Padding(0, 1).
+			Background(p.theme.BackgroundSecondary()).
+			Foreground(p.theme.Text())
+		
+		// Highlight hovered button
+		if i == p.hoveredButton {
+			style = style.
+				Background(p.theme.Primary()).
+				Foreground(p.theme.Background()).
+				Bold(true)
+		}
+		
+		renderedButtons = append(renderedButtons, style.Render(btn.icon))
+	}
+	
+	// Add tooltip if hovering
+	result := lipgloss.JoinHorizontal(lipgloss.Left, renderedButtons...)
+	
+	if p.hoveredButton >= 0 && p.hoveredButton < len(buttons) {
+		tooltipStyle := lipgloss.NewStyle().
+			Foreground(p.theme.TextMuted()).
+			Italic(true).
+			PaddingLeft(1)
+		
+		tooltip := tooltipStyle.Render(buttons[p.hoveredButton].tooltip)
+		result = lipgloss.JoinHorizontal(lipgloss.Left, result, tooltip)
+	}
+	
+	return result
 }
 
 // getContextUsage returns a formatted string showing context usage

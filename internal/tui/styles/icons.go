@@ -1,7 +1,7 @@
 package styles
 
 const (
-	OpenCodeIcon string = "⌬"
+	CodeForgeIcon string = "💎"
 
 	CheckIcon    string = "✓"
 	ErrorIcon    string = "✖"

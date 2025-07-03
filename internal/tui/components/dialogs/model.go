@@ -24,8 +24,6 @@ type ModelSelectedMsg struct {
 	Model    string
 }
 
-// DialogCloseMsg is sent when a dialog should close
-type DialogCloseMsg struct{}
 
 // ModelDialog represents the model selection dialog
 type ModelDialog struct {
@@ -448,38 +446,6 @@ func (m *ModelDialog) toggleFavorite() {
 	}
 }
 
-// Helper functions
-func formatContextWindow(tokens int) string {
-	if tokens >= 1000000 {
-		return fmt.Sprintf("%.1fM", float64(tokens)/1000000)
-	}
-	if tokens >= 1000 {
-		return fmt.Sprintf("%dk", tokens/1000)
-	}
-	return fmt.Sprintf("%d", tokens)
-}
-
-func truncate(s string, maxWidth int) string {
-	if lipgloss.Width(s) <= maxWidth {
-		return s
-	}
-
-	runes := []rune(s)
-	for i := len(runes); i > 0; i-- {
-		truncated := string(runes[:i])
-		if lipgloss.Width(truncated) <= maxWidth {
-			return truncated
-		}
-	}
-	return ""
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
 
 // Key bindings
 type keyMap struct {

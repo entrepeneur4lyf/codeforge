@@ -64,7 +64,7 @@ func New(application *app.App) *Model {
 func (m *Model) Init() tea.Cmd {
 	// Initialize components
 	m.chatModel = m.createChatModel()
-	m.modelDialog = dialog.NewModelDialog(m.app, m.theme)
+	m.modelDialog = dialog.NewAdvancedModelDialog(m.app, m.theme)
 	m.helpDialog = dialog.NewHelpDialog(m.theme)
 	m.fileDialog = dialog.NewFileDialog(m.theme)
 	

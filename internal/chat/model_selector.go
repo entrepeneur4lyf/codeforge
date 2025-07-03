@@ -257,29 +257,6 @@ func (ms *ModelSelector) getProviderDisplayName(provider string) string {
 	return provider
 }
 
-// getProviderNameFromFilter converts filter key to provider name
-func getProviderNameFromFilter(filter string) string {
-	switch filter {
-	case "anthropic":
-		return "Anthropic"
-	case "openai":
-		return "OpenAI"
-	case "google":
-		return "Google"
-	case "meta-llama":
-		return "Meta"
-	case "mistralai":
-		return "Mistral AI"
-	case "deepseek":
-		return "DeepSeek"
-	case "x-ai":
-		return "01.AI"
-	case "cohere":
-		return "Cohere"
-	default:
-		return titleCase(filter)
-	}
-}
 
 // titleCase converts a string to title case without using deprecated strings.Title
 func titleCase(s string) string {
@@ -348,60 +325,6 @@ func (ms *ModelSelector) loadModels(providerID string) tea.Cmd {
 	}
 }
 
-// addDefaultModels adds default models when registry is empty
-func (ms *ModelSelector) addDefaultModels(providerID string) {
-	// Special handling for OpenRouter - fetch dynamic models
-	if providerID == "openrouter" {
-		ms.addOpenRouterModels()
-		return
-	}
-	defaults := map[string][]ModelInfo{
-		"anthropic": ms.loadAnthropicModels(providerID),
-		"openai":    ms.loadOpenAIModels(providerID),
-		"gemini": {
-			{Name: "Gemini 2.5 Pro (Latest)", ID: "gemini-2.5-pro", Provider: providerID},
-			{Name: "Gemini 2.5 Flash (Latest)", ID: "gemini-2.5-flash", Provider: providerID},
-			{Name: "Gemini 1.5 Pro", ID: "gemini-1.5-pro-latest", Provider: providerID},
-		},
-		"groq": {
-			{Name: "Llama 3.3 70B (Latest)", ID: "llama-3.3-70b-versatile", Provider: providerID},
-			{Name: "Llama 3.1 70B", ID: "llama-3.1-70b-versatile", Provider: providerID},
-			{Name: "Llama 3.1 8B", ID: "llama-3.1-8b-instant", Provider: providerID},
-		},
-		"github": {
-			{Name: "GPT-4o (Latest)", ID: "gpt-4o-2024-08-06", Provider: providerID},
-			{Name: "GPT-4o Mini (Latest)", ID: "gpt-4o-mini-2024-07-18", Provider: providerID},
-			{Name: "o1 Preview", ID: "o1-preview-2024-09-12", Provider: providerID},
-		},
-		"xai": {
-			{Name: "Grok 3 (Latest)", ID: "grok-3", Provider: providerID},
-			{Name: "Grok 3 Mini", ID: "grok-3-mini", Provider: providerID},
-		},
-		"mistral": {
-			{Name: "Mistral Large 2407 (Latest)", ID: "mistral-large-2407", Provider: providerID},
-			{Name: "Mistral Small 3.2 24B", ID: "mistral-small-3.2-24b-instruct", Provider: providerID},
-			{Name: "Magistral Medium", ID: "magistral-medium-2506", Provider: providerID},
-		},
-		"deepseek": {
-			{Name: "DeepSeek R1 (Latest)", ID: "deepseek-r1-0528", Provider: providerID},
-			{Name: "DeepSeek R1 Distill", ID: "deepseek-r1-distill-qwen-7b", Provider: providerID},
-		},
-		"ollama": {
-			{Name: "Llama 3.1 8B", ID: "llama3.1:8b", Provider: providerID},
-			{Name: "Llama 3.1 70B", ID: "llama3.1:70b", Provider: providerID},
-			{Name: "Code Llama", ID: "codellama:13b", Provider: providerID},
-			{Name: "Mistral 7B", ID: "mistral:7b", Provider: providerID},
-			{Name: "DeepSeek Coder", ID: "deepseek-coder:6.7b", Provider: providerID},
-		},
-	}
-
-	if models, exists := defaults[providerID]; exists {
-		for _, model := range models {
-			model.Favorite = ms.favorites.IsModelFavorite(model.ID)
-			ms.models = append(ms.models, model)
-		}
-	}
-}
 
 // Bubble Tea interface implementation
 func (ms *ModelSelector) Init() tea.Cmd {
@@ -432,12 +355,13 @@ func (ms *ModelSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down", "j":
-			maxIndex := 0
-			if ms.mode == SelectingProvider {
+			var maxIndex int
+			switch ms.mode {
+			case SelectingProvider:
 				maxIndex = len(ms.providers) - 1
-			} else if ms.mode == SelectingOpenRouterFilter {
+			case SelectingOpenRouterFilter:
 				maxIndex = len(ms.openRouterFilters) - 1
-			} else {
+			default:
 				maxIndex = len(ms.models) - 1
 			}
 			if ms.selectedIndex < maxIndex {
@@ -445,7 +369,8 @@ func (ms *ModelSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "enter":
-			if ms.mode == SelectingProvider {
+			switch ms.mode {
+			case SelectingProvider:
 				// Select provider and load models
 				if ms.selectedIndex < len(ms.providers) {
 					provider := ms.providers[ms.selectedIndex]
@@ -464,7 +389,7 @@ func (ms *ModelSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
-			} else if ms.mode == SelectingOpenRouterFilter {
+			case SelectingOpenRouterFilter:
 				// Select OpenRouter filter and load filtered models
 				if ms.selectedIndex < len(ms.openRouterFilters) {
 					filter := ms.openRouterFilters[ms.selectedIndex]
@@ -473,7 +398,7 @@ func (ms *ModelSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					ms.selectedIndex = 0
 					return ms, ms.loadModels("openrouter")
 				}
-			} else {
+			default:
 				// Select model and finish (SelectingModel mode)
 				if !ms.loading && ms.selectedIndex < len(ms.models) {
 					model := ms.models[ms.selectedIndex]
@@ -512,14 +437,15 @@ func (ms *ModelSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "backspace":
 			// Go back to previous selection level
-			if ms.mode == SelectingModel {
+			switch ms.mode {
+			case SelectingModel:
 				if ms.selectedProvider == "openrouter" {
 					ms.mode = SelectingOpenRouterFilter
 				} else {
 					ms.mode = SelectingProvider
 				}
 				ms.selectedIndex = 0
-			} else if ms.mode == SelectingOpenRouterFilter {
+			case SelectingOpenRouterFilter:
 				ms.mode = SelectingProvider
 				ms.selectedIndex = 0
 			}
@@ -532,7 +458,8 @@ func (ms *ModelSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (ms *ModelSelector) View() string {
 	var b strings.Builder
 
-	if ms.mode == SelectingProvider {
+	switch ms.mode {
+	case SelectingProvider:
 		b.WriteString(titleStyle.Render("Select AI Provider"))
 		b.WriteString("\n\n")
 
@@ -564,7 +491,7 @@ func (ms *ModelSelector) View() string {
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("↑/↓: navigate • enter: select • space: favorite • q: quit"))
 
-	} else if ms.mode == SelectingOpenRouterFilter {
+	case SelectingOpenRouterFilter:
 		b.WriteString(titleStyle.Render("🌐 OpenRouter - Select Provider Filter"))
 		b.WriteString("\n\n")
 
@@ -582,7 +509,7 @@ func (ms *ModelSelector) View() string {
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("↑/↓: navigate • enter: select • backspace: back • q: quit"))
 
-	} else {
+	default:
 		b.WriteString(titleStyle.Render("Select Model"))
 		b.WriteString("\n\n")
 
@@ -1132,7 +1059,7 @@ func (ms *ModelSelector) convertGeminiModelToModelInfo(model providers.GeminiMod
 }
 
 // isCodeGenerationModel filters out non-coding models (audio, video, image, etc.)
-func (ms *ModelSelector) isCodeGenerationModel(modelName string, capabilities []string) bool {
+func (ms *ModelSelector) isCodeGenerationModel(modelName string, _ []string) bool {
 	modelLower := strings.ToLower(modelName)
 
 	// Exclude audio/video/image models
