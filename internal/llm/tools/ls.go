@@ -94,14 +94,30 @@ func (l *lsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 		return NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 
-	searchPath := params.Path
-	if searchPath == "" {
-		searchPath = config.WorkingDirectory()
-	}
+    searchPath := params.Path
+    if searchPath == "" {
+        if cfg := config.Get(); cfg != nil && cfg.WorkingDir != "" {
+            searchPath = cfg.WorkingDir
+        } else {
+            if wd, err := os.Getwd(); err == nil && wd != "" {
+                searchPath = wd
+            } else {
+                searchPath = "."
+            }
+        }
+    }
 
-	if !filepath.IsAbs(searchPath) {
-		searchPath = filepath.Join(config.WorkingDirectory(), searchPath)
-	}
+    if !filepath.IsAbs(searchPath) {
+        base := ""
+        if cfg := config.Get(); cfg != nil && cfg.WorkingDir != "" {
+            base = cfg.WorkingDir
+        } else if wd, err := os.Getwd(); err == nil && wd != "" {
+            base = wd
+        } else {
+            base = "."
+        }
+        searchPath = filepath.Join(base, searchPath)
+    }
 
 	if _, err := os.Stat(searchPath); os.IsNotExist(err) {
 		return NewTextErrorResponse(fmt.Sprintf("path does not exist: %s", searchPath)), nil

@@ -11,7 +11,8 @@ type MessageParser struct {
 	// Regex patterns for different content types
 	codeBlockPattern *regexp.Regexp
 	fileBlockPattern *regexp.Regexp
-	toolPattern      *regexp.Regexp
+    toolPattern      *regexp.Regexp
+    toolResultPattern *regexp.Regexp
 	diagPattern      *regexp.Regexp
 }
 
@@ -22,8 +23,10 @@ func NewMessageParser() *MessageParser {
 		codeBlockPattern: regexp.MustCompile("(?s)```(?:([a-zA-Z0-9_+-]+)\n)?(.+?)```"),
 		// Match file blocks with path and optional line range
 		fileBlockPattern: regexp.MustCompile("(?s)```file:([^\n]+)\n(.+?)```"),
-		// Match tool invocations
-		toolPattern: regexp.MustCompile("(?s)<tool_use>(.*?)</tool_use>"),
+        // Match tool invocations
+        toolPattern: regexp.MustCompile("(?s)(?:<tool(?:\\s+[^>]*)?>(.*?)</tool>)|(?:<tool_use>(.*?)</tool_use>)"),
+        // Match tool results
+        toolResultPattern: regexp.MustCompile("(?s)<tool_result>(.*?)</tool_result>"),
 		// Match diagnostics
 		diagPattern: regexp.MustCompile("(?s)<diagnostic[^>]*>(.*?)</diagnostic>"),
 	}
@@ -62,33 +65,54 @@ func (p *MessageParser) ParseMessage(msg Message) []MessagePart {
 		}
 	}
 	
-	// Find tool invocations
-	for _, m := range p.toolPattern.FindAllStringSubmatchIndex(content, -1) {
-		if len(m) >= 4 {
-			toolContent := content[m[2]:m[3]]
-			matches = append(matches, match{
-				start:    m[0],
-				end:      m[1],
-				partType: PartTypeTool,
-				content:  toolContent,
-				metadata: nil,
-			})
-		}
-	}
+    // Find tool invocations
+    for _, m := range p.toolPattern.FindAllStringSubmatchIndex(content, -1) {
+        if len(m) >= 6 {
+            startIdx, endIdx := m[2], m[3]
+            if startIdx == -1 || endIdx == -1 {
+                startIdx, endIdx = m[4], m[5]
+            }
+            if startIdx != -1 && endIdx != -1 {
+                // Include the full block so renderers can access attributes like name
+                toolBlock := content[m[0]:m[1]]
+                matches = append(matches, match{
+                    start:    m[0],
+                    end:      m[1],
+                    partType: PartTypeTool,
+                    content:  toolBlock,
+                    metadata: nil,
+                })
+            }
+        }
+    }
+
+    // Find tool results
+    for _, m := range p.toolResultPattern.FindAllStringSubmatchIndex(content, -1) {
+        if len(m) >= 4 {
+            resContent := content[m[2]:m[3]]
+            matches = append(matches, match{
+                start:    m[0],
+                end:      m[1],
+                partType: PartTypeToolResult,
+                content:  resContent,
+                metadata: nil,
+            })
+        }
+    }
 	
-	// Find diagnostics
-	for _, m := range p.diagPattern.FindAllStringSubmatchIndex(content, -1) {
-		if len(m) >= 4 {
-			diagContent := content[m[2]:m[3]]
-			matches = append(matches, match{
-				start:    m[0],
-				end:      m[1],
-				partType: PartTypeDiagnostic,
-				content:  diagContent,
-				metadata: nil,
-			})
-		}
-	}
+    // Find diagnostics (include full tag so attributes are available)
+    for _, m := range p.diagPattern.FindAllStringSubmatchIndex(content, -1) {
+        if len(m) >= 2 {
+            fullBlock := content[m[0]:m[1]]
+            matches = append(matches, match{
+                start:    m[0],
+                end:      m[1],
+                partType: PartTypeDiagnostic,
+                content:  fullBlock,
+                metadata: nil,
+            })
+        }
+    }
 	
 	// Find code blocks that aren't file blocks
 	for _, m := range p.codeBlockPattern.FindAllStringSubmatchIndex(content, -1) {
@@ -102,20 +126,25 @@ func (p *MessageParser) ParseMessage(msg Message) []MessagePart {
 				}
 			}
 			
-			if !isFileBlock {
+            if !isFileBlock {
 				lang := ""
 				if m[2] != -1 && m[3] != -1 {
 					lang = content[m[2]:m[3]]
 				}
 				codeContent := content[m[4]:m[5]]
-				
-				matches = append(matches, match{
-					start:    m[0],
-					end:      m[1],
-					partType: PartTypeCode,
-					content:  codeContent,
-					metadata: map[string]interface{}{"language": lang},
-				})
+                
+                partType := PartTypeCode
+                if strings.ToLower(lang) == "diff" {
+                    partType = PartTypeDiff
+                }
+                
+                matches = append(matches, match{
+                    start:    m[0],
+                    end:      m[1],
+                    partType: partType,
+                    content:  codeContent,
+                    metadata: map[string]interface{}{"language": lang},
+                })
 			}
 		}
 	}

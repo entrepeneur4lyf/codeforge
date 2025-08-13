@@ -125,14 +125,13 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.renderView()
 		return m, nil
 		
-	case RenderProgressMsg:
-		// Update render progress (could show in status line)
-		// For now, just continue checking
-		if taskID, ok := m.asyncTasks[msg.TaskID]; ok {
-			cmd := m.asyncRenderer.checkRenderStatus(taskID)
-			return m, cmd
-		}
-		return m, nil
+    case RenderProgressMsg:
+        // Continue checking status for the given task
+        if msg.TaskID != "" {
+            cmd := m.asyncRenderer.checkRenderStatus(msg.TaskID)
+            return m, cmd
+        }
+        return m, nil
 		
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -298,20 +297,19 @@ func (m *messagesComponent) renderView() {
 }
 
 func (m *messagesComponent) renderMessage(msg Message) string {
-	// Check if async rendering is in progress
-	if taskID, ok := m.asyncTasks[msg.ID]; ok {
-		if task, found := m.asyncRenderer.GetTask(taskID); found {
-			if task.Status == RenderStatusComplete {
-				// Use the async rendered result
-				m.cache.Set(m.cache.GenerateKey(msg.ID, "async-complete"), task.Result)
-				delete(m.asyncTasks, msg.ID)
-				return task.Result
-			} else {
-				// Show status while rendering
-				return m.renderMessageWithStatus(msg, task)
-			}
-		}
-	}
+    // Check if async rendering is in progress
+    if taskID, ok := m.asyncTasks[msg.ID]; ok {
+        if task, found := m.asyncRenderer.GetTask(taskID); found {
+            if task.Status == RenderStatusComplete {
+                // Use the async rendered result and drop the placeholder
+                delete(m.asyncTasks, msg.ID)
+                return task.Result
+            } else {
+                // Show status while rendering
+                return m.renderMessageWithStatus(msg, task)
+            }
+        }
+    }
 	
 	// Check if we should use async rendering (for large messages)
 	if len(msg.Content) > 5000 && msg.Role == "assistant" {
@@ -744,7 +742,6 @@ func (m *messagesComponent) handleRenderComplete(msg RenderCompleteMsg) {
 			m.cache.InvalidateMatching(func(key string) bool {
 				return strings.Contains(key, msgID)
 			})
-			delete(m.asyncTasks, msgID)
 			break
 		}
 	}

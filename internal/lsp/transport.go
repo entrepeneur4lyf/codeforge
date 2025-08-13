@@ -44,14 +44,17 @@ func NewNotification(method string, params any) (*Message, error) {
 
 // WriteMessage writes a JSON-RPC message to the writer
 func WriteMessage(w io.Writer, msg *Message) error {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
+    if w == nil {
+        return fmt.Errorf("writer is nil")
+    }
+    data, err := json.Marshal(msg)
+    if err != nil {
+        return err
+    }
 
-	content := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(data), data)
-	_, err = w.Write([]byte(content))
-	return err
+    content := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(data), data)
+    _, err = w.Write([]byte(content))
+    return err
 }
 
 // ReadMessage reads a JSON-RPC message from a reader (following OpenCode's pattern)
@@ -129,8 +132,11 @@ func (c *Client) Call(ctx context.Context, method string, params any, result any
 		c.handlersMu.Unlock()
 	}()
 
-	// Send request
-	if err := WriteMessage(c.stdin, msg); err != nil {
+    // Send request
+    if c.stdin == nil {
+        return fmt.Errorf("LSP server not initialized")
+    }
+    if err := WriteMessage(c.stdin, msg); err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 
@@ -160,7 +166,10 @@ func (c *Client) Notify(ctx context.Context, method string, params any) error {
 		return fmt.Errorf("failed to create notification: %w", err)
 	}
 
-	return WriteMessage(c.stdin, msg)
+    if c.stdin == nil {
+        return fmt.Errorf("LSP server not initialized")
+    }
+    return WriteMessage(c.stdin, msg)
 }
 
 // InitializeLSPClient initializes the LSP client with the server

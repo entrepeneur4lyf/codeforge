@@ -46,9 +46,10 @@ func TestAsyncRenderer(t *testing.T) {
 			t.Error("Task should be created")
 		}
 		
-		if task.Status != RenderStatusPending && task.Status != RenderStatusRendering {
-			t.Errorf("Expected pending or rendering status, got %s", task.Status)
-		}
+        // Rendering can complete very fast on small inputs; accept complete as valid
+        if task.Status != RenderStatusPending && task.Status != RenderStatusRendering && task.Status != RenderStatusComplete {
+            t.Errorf("Expected pending, rendering, or complete status, got %s", task.Status)
+        }
 	})
 	
 	t.Run("render completion", func(t *testing.T) {

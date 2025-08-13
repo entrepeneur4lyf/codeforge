@@ -1,14 +1,15 @@
 package chat
 
 import (
-	"strings"
+    "os"
+    "strings"
 
-	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
+    "github.com/atotto/clipboard"
+    "github.com/charmbracelet/bubbles/key"
+    "github.com/charmbracelet/bubbles/textarea"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/charmbracelet/lipgloss"
+    "github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
 type EditorModel struct {
@@ -129,6 +130,34 @@ func (m *EditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// handlePaste processes a paste action. If the clipboard contains a base64-encoded
+// image (data URL), it saves it to a temp file and adds it as an attachment.
+// Otherwise, it pastes text into the editor.
+func (m *EditorModel) handlePaste() tea.Cmd {
+    // Try to read from system clipboard
+    content, err := clipboard.ReadAll()
+    if err != nil || content == "" {
+        return nil
+    }
+
+    // If clipboard contains a base64 image data URL, save as attachment
+    if IsBase64Image(content) {
+        if img, err := DecodeBase64Image(content); err == nil {
+            if path, err := SaveImageToTemp(img); err == nil {
+                m.AddAttachment(path)
+                return nil
+            }
+        }
+        // If decoding failed, fall back to inserting the raw text
+    }
+
+    // Fallback: insert text content at the end
+    current := m.textarea.Value()
+    m.textarea.SetValue(current + content)
+    m.textarea.CursorEnd()
+    return nil
+}
+
 func (m *EditorModel) View() string {
 	// Style the prompt with theme colors
 	promptStyle := lipgloss.NewStyle().
@@ -171,6 +200,46 @@ func (m *EditorModel) View() string {
 		attachmentsView,
 		editorView,
 	)
+}
+
+// handlePaste reads from the system clipboard. If the clipboard contains
+// paths to existing files (one per line), they are added as attachments.
+// Otherwise, the text content is appended to the editor input.
+func (m *EditorModel) handlePaste() tea.Cmd {
+    text, err := clipboard.ReadAll()
+    if err != nil || text == "" {
+        return nil
+    }
+
+    // Try to interpret clipboard as file paths (one per line)
+    lines := strings.Split(strings.TrimSpace(text), "\n")
+    var existingFiles []string
+    for _, ln := range lines {
+        p := strings.TrimSpace(ln)
+        if p == "" {
+            continue
+        }
+        if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+            existingFiles = append(existingFiles, p)
+        }
+    }
+
+    if len(existingFiles) > 0 {
+        for _, p := range existingFiles {
+            m.AddAttachment(p)
+        }
+        return nil
+    }
+
+    // Fallback: paste as text appended to current value
+    current := m.textarea.Value()
+    // Ensure single trailing newline between existing and pasted when needed
+    if current != "" && !strings.HasSuffix(current, "\n") {
+        current += "\n"
+    }
+    m.textarea.SetValue(current + text)
+    m.textarea.CursorEnd()
+    return nil
 }
 
 func (m *EditorModel) SetWidth(width int) {

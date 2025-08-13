@@ -293,47 +293,54 @@ func ParseToolContent(content string) (*ToolInvocation, error) {
 		return &tool, nil
 	}
 	
-	// Try to parse XML-style format
-	// <tool name="calculator"><input>2+2</input></tool>
-	if strings.HasPrefix(content, "<tool") && strings.HasSuffix(content, "</tool>") {
-		// Simple parsing - in production use proper XML parser
-		nameStart := strings.Index(content, `name="`)
-		if nameStart != -1 {
-			nameStart += 6
-			nameEnd := strings.Index(content[nameStart:], `"`)
-			if nameEnd != -1 {
-				tool.Name = content[nameStart : nameStart+nameEnd]
-				
-				// Extract content between tags, handling nested tags
-				inputStart := strings.Index(content[nameStart+nameEnd:], ">")
-				if inputStart != -1 {
-					inputStart += nameStart + nameEnd
-					inputEnd := strings.LastIndex(content, "</tool>")
-					if inputEnd != -1 && inputStart < inputEnd {
-						innerContent := content[inputStart+1 : inputEnd]
-						// Check for nested input tags
-						if strings.Contains(innerContent, "<input>") && strings.Contains(innerContent, "</input>") {
-							start := strings.Index(innerContent, "<input>") + 7
-							end := strings.Index(innerContent, "</input>")
-							if start < end {
-								inputContent := innerContent[start:end]
-								tool.Parameters = map[string]interface{}{
-									"input": strings.TrimSpace(inputContent),
-								}
-							}
-						} else {
-							// No input tags, use the whole content
-							tool.Parameters = map[string]interface{}{
-								"input": strings.TrimSpace(innerContent),
-							}
-						}
-					}
-				}
-				
-				return &tool, nil
-			}
-		}
-	}
+    // Try to parse XML-style format
+    // <tool name="calculator"><input>2+2</input></tool>
+    if strings.HasPrefix(content, "<tool") && strings.HasSuffix(content, "</tool>") {
+        // Simple parsing - in production use proper XML parser
+        nameStart := strings.Index(content, `name="`)
+        if nameStart != -1 {
+            nameStart += 6
+            nameEnd := strings.Index(content[nameStart:], `"`)
+            if nameEnd != -1 {
+                tool.Name = content[nameStart : nameStart+nameEnd]
+                
+                // Extract content between tags, handling nested tags
+                inputStart := strings.Index(content[nameStart+nameEnd:], ">")
+                if inputStart != -1 {
+                    inputStart += nameStart + nameEnd
+                    inputEnd := strings.LastIndex(content, "</tool>")
+                    if inputEnd != -1 && inputStart < inputEnd {
+                        innerContent := content[inputStart+1 : inputEnd]
+                        // Check for nested input tags
+                        if strings.Contains(innerContent, "<input>") && strings.Contains(innerContent, "</input>") {
+                            start := strings.Index(innerContent, "<input>") + 7
+                            end := strings.Index(innerContent, "</input>")
+                            if start < end {
+                                inputContent := innerContent[start:end]
+                                // If input content looks like JSON, try to parse
+                                trimmed := strings.TrimSpace(inputContent)
+                                var params map[string]interface{}
+                                if (strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) && json.Unmarshal([]byte(trimmed), &params) == nil {
+                                    tool.Parameters = params
+                                } else {
+                                    tool.Parameters = map[string]interface{}{
+                                        "input": trimmed,
+                                    }
+                                }
+                            }
+                        } else {
+                            // No input tags, use the whole content
+                            tool.Parameters = map[string]interface{}{
+                                "input": strings.TrimSpace(innerContent),
+                            }
+                        }
+                    }
+                }
+                
+                return &tool, nil
+            }
+        }
+    }
 	
 	return nil, fmt.Errorf("unable to parse tool content")
 }
