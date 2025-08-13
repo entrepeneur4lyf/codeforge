@@ -381,13 +381,12 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
         allow := ""
         allowed := []string{"http://localhost:", "http://127.0.0.1:", "http://[::1]:"}
         if s.config != nil {
-            if len(s.config.ContextPaths) >= 0 { /* no-op to avoid unused field warning */ }
-            // If viper is loaded, try to read custom allowlist
-            if cfg := s.config; cfg != nil {
-                // For now, use environment override CODEFORGE_ALLOWED_ORIGINS as comma-separated prefixes
-                if env := os.Getenv("CODEFORGE_ALLOWED_ORIGINS"); env != "" {
-                    allowed = strings.Split(env, ",")
-                }
+            if len(s.config.AllowedOrigins) > 0 {
+                allowed = s.config.AllowedOrigins
+            }
+            // Environment variable can override at runtime
+            if env := os.Getenv("CODEFORGE_ALLOWED_ORIGINS"); env != "" {
+                allowed = strings.Split(env, ",")
             }
         }
         if origin == "" {

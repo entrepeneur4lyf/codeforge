@@ -135,6 +135,9 @@ type Config struct {
 	Models       map[string]ModelConfig            `json:"models,omitempty"` // Model-specific configurations
 	Context      ContextConfig                     `json:"context"`          // Context management configuration
 	Permissions  PermissionConfig                  `json:"permissions"`      // Permission system configuration
+	// Web/API
+	AllowedOrigins           []string `json:"allowedOrigins,omitempty"`
+	WebAllowDirectFSFallback bool     `json:"webAllowDirectFSFallback,omitempty"`
 
 	// Enhanced configuration managers (Phase 4)
 	ModelConfigManager *ModelConfigManager `json:"-"` // Enhanced model configuration manager
@@ -247,6 +250,14 @@ func setDefaults(debug bool) {
 	viper.SetDefault("context.maxCacheSize", 1000)
 	viper.SetDefault("context.compressionLevel", 3)
 	viper.SetDefault("context.relevanceThreshold", 0.1)
+
+	// Web/API defaults
+	viper.SetDefault("allowedOrigins", []string{
+		"http://localhost:",
+		"http://127.0.0.1:",
+		"http://[::1]:",
+	})
+	viper.SetDefault("webAllowDirectFSFallback", false)
 
 	// Set default shell from environment or fallback to /bin/bash
 	shellPath := os.Getenv("SHELL")
@@ -373,10 +384,19 @@ func Get() *Config {
 
 // WorkingDirectory returns the current working directory from the configuration
 func WorkingDirectory() string {
-	if cfg == nil {
-		panic("config not loaded")
-	}
-	return cfg.WorkingDir
+    if cfg == nil {
+        // Fallback to current process working directory to avoid panics in tools/tests
+        if wd, err := os.Getwd(); err == nil {
+            return wd
+        }
+        return ""
+    }
+    if cfg.WorkingDir == "" {
+        if wd, err := os.Getwd(); err == nil {
+            return wd
+        }
+    }
+    return cfg.WorkingDir
 }
 
 // GetModelConfig returns configuration for a specific model
