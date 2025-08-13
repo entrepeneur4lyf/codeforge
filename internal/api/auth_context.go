@@ -1,7 +1,8 @@
 package api
 
 import (
-	"context"
+    "context"
+    "fmt"
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -22,11 +23,11 @@ func GetSession(ctx context.Context) (*Session, bool) {
 	return session, ok
 }
 
-// RequireSession gets a session from context or panics (for internal use)
-func RequireSession(ctx context.Context) *Session {
-	session, ok := GetSession(ctx)
-	if !ok {
-		panic("session not found in context")
-	}
-	return session
+// RequireSession gets a session from context or returns an error instead of panicking
+func RequireSession(ctx context.Context) (*Session, error) {
+    session, ok := GetSession(ctx)
+    if !ok || session == nil {
+        return nil, fmt.Errorf("session not found in context")
+    }
+    return session, nil
 }
