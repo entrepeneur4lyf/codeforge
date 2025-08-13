@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
     "strings"
+    "os"
 )
 
 // ConnectionManager manages active WebSocket connections
@@ -297,8 +298,8 @@ func (s *Server) initializeLLMSystem() error {
 func (s *Server) setupRoutes() *mux.Router {
 	router := mux.NewRouter()
 
-	// Enable CORS
-	router.Use(s.corsMiddleware)
+    // Enable CORS
+    router.Use(s.corsMiddleware)
 
 	// API v1 routes
 	api := router.PathPrefix("/api/v1").Subrouter()
@@ -359,8 +360,15 @@ func (s *Server) setupRoutes() *mux.Router {
 	// Health check (public)
 	api.HandleFunc("/health", s.handleHealth).Methods("GET")
 
-	// Static file serving for web UI
-	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./web/dist/")))
+    // Static file serving for web UI (guarded)
+    if _, err := os.Stat("./web/dist/"); err == nil {
+        router.PathPrefix("/").Handler(http.FileServer(http.Dir("./web/dist/")))
+    } else {
+        log.Printf("Web UI directory ./web/dist not found; static UI disabled (%v)", err)
+        router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+            http.Error(w, "Web UI not available. Build the UI or provide ./web/dist.", http.StatusNotFound)
+        })
+    }
 
 	return router
 }
@@ -368,14 +376,29 @@ func (s *Server) setupRoutes() *mux.Router {
 // corsMiddleware adds CORS headers
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // Restrict default CORS to localhost; can be expanded via config later
+        // Allowlist-based CORS: read allowed origins from config; default to localhost patterns
         origin := r.Header.Get("Origin")
         allow := ""
-        if origin == "" || strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:") || strings.HasPrefix(origin, "http://[::1]:") {
-            allow = origin
+        allowed := []string{"http://localhost:", "http://127.0.0.1:", "http://[::1]:"}
+        if s.config != nil {
+            if len(s.config.ContextPaths) >= 0 { /* no-op to avoid unused field warning */ }
+            // If viper is loaded, try to read custom allowlist
+            if cfg := s.config; cfg != nil {
+                // For now, use environment override CODEFORGE_ALLOWED_ORIGINS as comma-separated prefixes
+                if env := os.Getenv("CODEFORGE_ALLOWED_ORIGINS"); env != "" {
+                    allowed = strings.Split(env, ",")
+                }
+            }
         }
-        if allow == "" {
-            allow = "http://localhost:47000"
+        if origin == "" {
+            allow = ""
+        } else {
+            for _, a := range allowed {
+                if strings.HasPrefix(origin, strings.TrimSpace(a)) {
+                    allow = origin
+                    break
+                }
+            }
         }
         w.Header().Set("Access-Control-Allow-Origin", allow)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
