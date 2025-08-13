@@ -83,9 +83,15 @@ func (m *Model) logo() string {
 		Background(m.theme.BackgroundSecondary()).
 		Bold(true)
 	
-	code := baseStyle.Render("Code")
-	forge := emphasisStyle.Render("Forge ")
-	version := baseStyle.Render("v1.0") // TODO: Get version from app
+    code := baseStyle.Render("Code")
+    forge := emphasisStyle.Render("Forge ")
+    ver := "dev"
+    if m.app != nil {
+        if v := m.app.GetVersion(); v != "" {
+            ver = v
+        }
+    }
+    version := baseStyle.Render("v" + ver)
 	
 	return lipgloss.NewStyle().
 		Background(m.theme.BackgroundSecondary()).

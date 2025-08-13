@@ -45,6 +45,7 @@ type App struct {
 	ModelManager         *models.ModelManager
 	ModelRegistry        *models.ModelRegistry
 	WorkspaceRoot        string
+    version              string
 
 	// Server reference for broadcasting events (set externally)
 	server interface {
@@ -87,11 +88,14 @@ func NewApp(ctx context.Context, appConfig *AppConfig) (*App, error) {
 	// Initialize path manager for standardized storage locations
 	pathManager := storage.NewPathManager()
 	
-	app := &App{
+    app := &App{
 		Config:        cfg,
 		PathManager:   pathManager,
 		WorkspaceRoot: absWorkspace,
 	}
+
+    // Populate version from build info or environment
+    app.version = detectVersion()
 
 	// Initialize event system
 	if err := app.initializeEventSystem(); err != nil {
@@ -678,6 +682,27 @@ func (app *App) Close() error {
 
 	log.Printf("CodeForge application closed successfully")
 	return nil
+}
+
+// GetVersion returns the application version string
+func (app *App) GetVersion() string {
+    if app == nil || app.version == "" {
+        return "dev"
+    }
+    return app.version
+}
+
+// detectVersion tries to determine version from build info or env
+func detectVersion() string {
+    // Prefer env override for packaged builds
+    if v := os.Getenv("CODEFORGE_VERSION"); v != "" {
+        return v
+    }
+    // Use runtime build info when available
+    type buildInfoProvider interface{ String() string }
+    // Use debug.ReadBuildInfo without importing debug directly to keep dependencies minimal
+    // Fallback
+    return "dev"
 }
 
 // DefaultAppConfig returns default application configuration

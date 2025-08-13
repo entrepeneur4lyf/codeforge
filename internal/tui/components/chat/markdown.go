@@ -2,6 +2,7 @@ package chat
 
 import (
 	"fmt"
+    "regexp"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
@@ -112,51 +113,53 @@ func (m *MarkdownRenderer) RenderInline(content string) (string, error) {
 
 // processInlineMarkdown handles basic inline markdown elements
 func (m *MarkdownRenderer) processInlineMarkdown(content string) string {
-	// This is a simplified inline processor
-	// In production, you might want to use a proper markdown parser
-	
-	style := lipgloss.NewStyle()
-	
-	// Bold: **text** or __text__
-	content = processInlinePattern(content, `\*\*([^*]+)\*\*`, func(match string) string {
-		return style.Bold(true).Render(match)
-	})
-	content = processInlinePattern(content, `__([^_]+)__`, func(match string) string {
-		return style.Bold(true).Render(match)
-	})
-	
-	// Italic: *text* or _text_
-	content = processInlinePattern(content, `\*([^*]+)\*`, func(match string) string {
-		return style.Italic(true).Render(match)
-	})
-	content = processInlinePattern(content, `_([^_]+)_`, func(match string) string {
-		return style.Italic(true).Render(match)
-	})
-	
-	// Code: `text`
-	content = processInlinePattern(content, "`([^`]+)`", func(match string) string {
-		return style.
-			Background(m.theme.BackgroundSecondary()).
-			Foreground(m.theme.Text()).
-			Render(match)
-	})
-	
-	// Strikethrough: ~~text~~
-	content = processInlinePattern(content, `~~([^~]+)~~`, func(match string) string {
-		return style.Strikethrough(true).Render(match)
-	})
-	
-	return content
+    // Lightweight inline formatting using regex replacements with capture groups
+    style := lipgloss.NewStyle()
+
+    replace := func(input string, re *regexp.Regexp, styler func(string) string) string {
+        return re.ReplaceAllStringFunc(input, func(s string) string {
+            sub := re.FindStringSubmatch(s)
+            if len(sub) >= 2 {
+                return styler(sub[1])
+            }
+            return s
+        })
+    }
+
+    // Bold: **text** or __text__
+    content = replace(content, regexp.MustCompile(`\*\*([^*]+)\*\*`), func(inner string) string {
+        return style.Bold(true).Render(inner)
+    })
+    content = replace(content, regexp.MustCompile(`__([^_]+)__`), func(inner string) string {
+        return style.Bold(true).Render(inner)
+    })
+
+    // Italic: *text* or _text_
+    content = replace(content, regexp.MustCompile(`\*([^*]+)\*`), func(inner string) string {
+        return style.Italic(true).Render(inner)
+    })
+    content = replace(content, regexp.MustCompile(`_([^_]+)_`), func(inner string) string {
+        return style.Italic(true).Render(inner)
+    })
+
+    // Code: `text`
+    content = replace(content, regexp.MustCompile("`([^`]+)`"), func(inner string) string {
+        return style.
+            Background(m.theme.BackgroundSecondary()).
+            Foreground(m.theme.Text()).
+            Render(inner)
+    })
+
+    // Strikethrough: ~~text~~
+    content = replace(content, regexp.MustCompile(`~~([^~]+)~~`), func(inner string) string {
+        return style.Strikethrough(true).Render(inner)
+    })
+
+    return content
 }
 
 // processInlinePattern is a helper to process markdown patterns
-func processInlinePattern(content, pattern string, styler func(string) string) string {
-	// This is a simplified implementation
-	// In production, use a proper regex with backreferences
-	// For now, we'll just return the content as-is
-	// TODO: Implement proper pattern matching
-	return content
-}
+func processInlinePattern(content, pattern string, styler func(string) string) string { return content }
 
 // renderFallback provides a simple fallback rendering
 func (m *MarkdownRenderer) renderFallback(content string) string {
