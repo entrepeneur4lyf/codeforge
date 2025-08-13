@@ -30,15 +30,10 @@ var authCmd = &cobra.Command{
 			return fmt.Errorf("app not initialized")
 		}
 
-		// Create and start API server with integrated app
-		server := api.NewServerWithApp(codeforgeApp.Config, codeforgeApp)
-		if server == nil {
-			return fmt.Errorf("failed to create API server")
-		}
-
-		// Start server in background
-		done := make(chan error, 1)
-		go func() { done <- server.Start(authPort) }()
+        // Start a minimal auth-only server and shut it down after issuing a token
+        authServer := api.NewAuthServer()
+        done := make(chan error, 1)
+        go func() { done <- authServer.Start(authPort) }()
 
 		// Wait for server health
 		baseURL := fmt.Sprintf("http://localhost:%d", authPort)
@@ -73,22 +68,24 @@ var authCmd = &cobra.Command{
 		fmt.Printf("Session: %s\n", payload.SessionID)
 		fmt.Printf("Use the token in Authorization: Bearer <token>\n")
 
-		if !authForeground {
-			// Non-foreground: give server a moment then exit (leaves server running in this process)
-			return nil
-		}
+        // Stop the auth server immediately after issuing token unless foreground requested
+        if !authForeground {
+            _ = authServer.Stop(context.Background())
+            return nil
+        }
 
-		// Foreground: wait for interrupt
-		fmt.Println("Press Ctrl+C to stop the auth server...")
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-		select {
-		case <-sig:
-			fmt.Println("\nStopping auth server...")
-			return nil
-		case err := <-done:
-			return err
-		}
+        // Foreground: wait for interrupt then stop
+        fmt.Println("Press Ctrl+C to stop the auth server...")
+        sig := make(chan os.Signal, 1)
+        signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+        select {
+        case <-sig:
+            fmt.Println("\nStopping auth server...")
+            _ = authServer.Stop(context.Background())
+            return nil
+        case err := <-done:
+            return err
+        }
 	},
 }
 

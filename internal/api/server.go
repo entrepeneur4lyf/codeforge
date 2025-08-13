@@ -1,6 +1,7 @@
 package api
 
 import (
+    "context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"github.com/entrepeneur4lyf/codeforge/internal/vectordb"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+    "strings"
 )
 
 // ConnectionManager manages active WebSocket connections
@@ -185,6 +187,7 @@ type Server struct {
 	app               *app.App // Integrated CodeForge application
 	connectionManager *ConnectionManager
 	gitignoreFilter   *utils.GitIgnoreFilter
+    httpServer        *http.Server
 }
 
 // NewServer creates a new API server
@@ -247,12 +250,24 @@ func (s *Server) Start(port int) error {
 		return fmt.Errorf("failed to initialize dependencies: %w", err)
 	}
 
-	router := s.setupRoutes()
+    router := s.setupRoutes()
 
-	addr := fmt.Sprintf(":%d", port)
-	log.Printf("🌐 Starting API server on %s", addr)
+    addr := fmt.Sprintf(":%d", port)
+    log.Printf("🌐 Starting API server on %s", addr)
 
-	return http.ListenAndServe(addr, router)
+    s.httpServer = &http.Server{
+        Addr:    addr,
+        Handler: router,
+    }
+    return s.httpServer.ListenAndServe()
+}
+
+// Stop gracefully shuts down the HTTP server
+func (s *Server) Stop(ctx context.Context) error {
+    if s.httpServer == nil {
+        return nil
+    }
+    return s.httpServer.Shutdown(ctx)
 }
 
 // initializeDependencies initializes required services
@@ -353,7 +368,16 @@ func (s *Server) setupRoutes() *mux.Router {
 // corsMiddleware adds CORS headers
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+        // Restrict default CORS to localhost; can be expanded via config later
+        origin := r.Header.Get("Origin")
+        allow := ""
+        if origin == "" || strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:") || strings.HasPrefix(origin, "http://[::1]:") {
+            allow = origin
+        }
+        if allow == "" {
+            allow = "http://localhost:47000"
+        }
+        w.Header().Set("Access-Control-Allow-Origin", allow)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
