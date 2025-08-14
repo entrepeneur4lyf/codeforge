@@ -8,6 +8,13 @@ import (
 // DialogCloseMsg is sent when a dialog should close
 type DialogCloseMsg struct{}
 
+// ModelSelectedMsg is sent when a model is selected in the model dialog
+// It carries the selected provider and model name.
+type ModelSelectedMsg struct {
+    Provider string
+    Model    string
+}
+
 // Helper functions used by multiple dialogs
 
 // formatContextWindow formats token counts for display

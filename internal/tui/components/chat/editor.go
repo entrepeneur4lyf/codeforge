@@ -130,33 +130,7 @@ func (m *EditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// handlePaste processes a paste action. If the clipboard contains a base64-encoded
-// image (data URL), it saves it to a temp file and adds it as an attachment.
-// Otherwise, it pastes text into the editor.
-func (m *EditorModel) handlePaste() tea.Cmd {
-    // Try to read from system clipboard
-    content, err := clipboard.ReadAll()
-    if err != nil || content == "" {
-        return nil
-    }
-
-    // If clipboard contains a base64 image data URL, save as attachment
-    if IsBase64Image(content) {
-        if img, err := DecodeBase64Image(content); err == nil {
-            if path, err := SaveImageToTemp(img); err == nil {
-                m.AddAttachment(path)
-                return nil
-            }
-        }
-        // If decoding failed, fall back to inserting the raw text
-    }
-
-    // Fallback: insert text content at the end
-    current := m.textarea.Value()
-    m.textarea.SetValue(current + content)
-    m.textarea.CursorEnd()
-    return nil
-}
+// (removed duplicate handlePaste implementation)
 
 func (m *EditorModel) View() string {
 	// Style the prompt with theme colors

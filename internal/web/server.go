@@ -100,11 +100,28 @@ type CommandRequest struct {
 func NewServer(cfg *config.Config) *Server {
 	router := mux.NewRouter()
 
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true // Allow all origins for development
-		},
-	}
+    upgrader := websocket.Upgrader{
+        CheckOrigin: func(r *http.Request) bool {
+            // Only allow same-host or localhost origins by default
+            origin := r.Header.Get("Origin")
+            if origin == "" {
+                return true
+            }
+            // Simple allowlist for localhost development
+            // Avoid full URL parsing to keep dependencies minimal
+            allowed := []string{
+                "http://localhost:",
+                "http://127.0.0.1:",
+                "http://[::1]:",
+            }
+            for _, a := range allowed {
+                if strings.HasPrefix(origin, a) {
+                    return true
+                }
+            }
+            return false
+        },
+    }
 
 	server := &Server{
 		router:   router,
@@ -121,11 +138,25 @@ func NewServer(cfg *config.Config) *Server {
 func NewServerWithApp(cfg *config.Config, codeforgeApp *app.App) *Server {
 	router := mux.NewRouter()
 
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true // Allow all origins for development
-		},
-	}
+    upgrader := websocket.Upgrader{
+        CheckOrigin: func(r *http.Request) bool {
+            origin := r.Header.Get("Origin")
+            if origin == "" {
+                return true
+            }
+            allowed := []string{
+                "http://localhost:",
+                "http://127.0.0.1:",
+                "http://[::1]:",
+            }
+            for _, a := range allowed {
+                if strings.HasPrefix(origin, a) {
+                    return true
+                }
+            }
+            return false
+        },
+    }
 
 	server := &Server{
 		router:   router,

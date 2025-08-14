@@ -2,7 +2,7 @@ package chat
 
 import (
 	"fmt"
-    "regexp"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
@@ -40,22 +40,22 @@ func (m *MarkdownRenderer) SetWidth(width int) error {
 	if width <= 0 {
 		return fmt.Errorf("width must be positive, got %d", width)
 	}
-	
+
 	if width == m.width {
 		return nil // No change needed
 	}
-	
+
 	m.width = width
-	
+
 	// Recreate renderer with new width
 	m.renderer = styles.GetMarkdownRenderer(width)
 	if m.renderer == nil {
 		return fmt.Errorf("failed to recreate renderer with width %d", width)
 	}
-	
+
 	// Clear cache since width changed
 	m.cache.Clear()
-	
+
 	return nil
 }
 
@@ -64,28 +64,28 @@ func (m *MarkdownRenderer) Render(content string) (string, error) {
 	if content == "" {
 		return "", nil
 	}
-	
+
 	// Generate cache key
 	cacheKey := m.cache.GenerateKey(content, m.width, "markdown")
-	
+
 	// Check cache
 	if rendered, found := m.cache.Get(cacheKey); found {
 		return rendered, nil
 	}
-	
+
 	// Render with glamour
 	rendered, err := m.renderer.Render(content)
 	if err != nil {
 		// Fallback to plain text on error
 		return m.renderFallback(content), nil
 	}
-	
+
 	// Trim excessive newlines that glamour sometimes adds
 	rendered = strings.TrimSpace(rendered)
-	
+
 	// Cache the result
 	m.cache.Set(cacheKey, rendered)
-	
+
 	return rendered, nil
 }
 
@@ -93,83 +93,82 @@ func (m *MarkdownRenderer) Render(content string) (string, error) {
 func (m *MarkdownRenderer) RenderInline(content string) (string, error) {
 	// For inline rendering, we'll strip certain block elements
 	// but preserve inline formatting like bold, italic, code
-	
+
 	// Generate cache key
 	cacheKey := m.cache.GenerateKey(content, m.width, "inline")
-	
+
 	// Check cache
 	if rendered, found := m.cache.Get(cacheKey); found {
 		return rendered, nil
 	}
-	
+
 	// Process inline elements manually for better control
 	rendered := m.processInlineMarkdown(content)
-	
+
 	// Cache the result
 	m.cache.Set(cacheKey, rendered)
-	
+
 	return rendered, nil
 }
 
 // processInlineMarkdown handles basic inline markdown elements
 func (m *MarkdownRenderer) processInlineMarkdown(content string) string {
-    // Lightweight inline formatting using regex replacements with capture groups
-    style := lipgloss.NewStyle()
+	// Lightweight inline formatting using regex replacements with capture groups
+	style := lipgloss.NewStyle()
 
-    replace := func(input string, re *regexp.Regexp, styler func(string) string) string {
-        return re.ReplaceAllStringFunc(input, func(s string) string {
-            sub := re.FindStringSubmatch(s)
-            if len(sub) >= 2 {
-                return styler(sub[1])
-            }
-            return s
-        })
-    }
+	replace := func(input string, re *regexp.Regexp, styler func(string) string) string {
+		return re.ReplaceAllStringFunc(input, func(s string) string {
+			sub := re.FindStringSubmatch(s)
+			if len(sub) >= 2 {
+				return styler(sub[1])
+			}
+			return s
+		})
+	}
 
-    // Bold: **text** or __text__
-    content = replace(content, regexp.MustCompile(`\*\*([^*]+)\*\*`), func(inner string) string {
-        return style.Bold(true).Render(inner)
-    })
-    content = replace(content, regexp.MustCompile(`__([^_]+)__`), func(inner string) string {
-        return style.Bold(true).Render(inner)
-    })
+	// Bold: **text** or __text__
+	content = replace(content, regexp.MustCompile(`\*\*([^*]+)\*\*`), func(inner string) string {
+		return style.Bold(true).Render(inner)
+	})
+	content = replace(content, regexp.MustCompile(`__([^_]+)__`), func(inner string) string {
+		return style.Bold(true).Render(inner)
+	})
 
-    // Italic: *text* or _text_
-    content = replace(content, regexp.MustCompile(`\*([^*]+)\*`), func(inner string) string {
-        return style.Italic(true).Render(inner)
-    })
-    content = replace(content, regexp.MustCompile(`_([^_]+)_`), func(inner string) string {
-        return style.Italic(true).Render(inner)
-    })
+	// Italic: *text* or _text_
+	content = replace(content, regexp.MustCompile(`\*([^*]+)\*`), func(inner string) string {
+		return style.Italic(true).Render(inner)
+	})
+	content = replace(content, regexp.MustCompile(`_([^_]+)_`), func(inner string) string {
+		return style.Italic(true).Render(inner)
+	})
 
-    // Code: `text`
-    content = replace(content, regexp.MustCompile("`([^`]+)`"), func(inner string) string {
-        return style.
-            Background(m.theme.BackgroundSecondary()).
-            Foreground(m.theme.Text()).
-            Render(inner)
-    })
+	// Code: `text`
+	content = replace(content, regexp.MustCompile("`([^`]+)`"), func(inner string) string {
+		return style.
+			Background(m.theme.BackgroundSecondary()).
+			Foreground(m.theme.Text()).
+			Render(inner)
+	})
 
-    // Strikethrough: ~~text~~
-    content = replace(content, regexp.MustCompile(`~~([^~]+)~~`), func(inner string) string {
-        return style.Strikethrough(true).Render(inner)
-    })
+	// Strikethrough: ~~text~~
+	content = replace(content, regexp.MustCompile(`~~([^~]+)~~`), func(inner string) string {
+		return style.Strikethrough(true).Render(inner)
+	})
 
-    return content
+	return content
 }
 
-// processInlinePattern is a helper to process markdown patterns
-func processInlinePattern(content, pattern string, styler func(string) string) string { return content }
+// processInlinePattern removed: rely on processInlineMarkdown with regex captures for inline formatting
 
 // renderFallback provides a simple fallback rendering
 func (m *MarkdownRenderer) renderFallback(content string) string {
 	// Basic fallback that preserves some structure
 	lines := strings.Split(content, "\n")
 	var result []string
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Headers
 		if strings.HasPrefix(trimmed, "#") {
 			level := strings.Count(strings.Split(trimmed, " ")[0], "#")
@@ -181,7 +180,7 @@ func (m *MarkdownRenderer) renderFallback(content string) string {
 			result = append(result, styled)
 			continue
 		}
-		
+
 		// Code blocks (simple detection)
 		if strings.HasPrefix(trimmed, "```") {
 			result = append(result, lipgloss.NewStyle().
@@ -189,24 +188,24 @@ func (m *MarkdownRenderer) renderFallback(content string) string {
 				Render(line))
 			continue
 		}
-		
+
 		// Lists
 		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
 			text := strings.TrimSpace(trimmed[2:])
 			result = append(result, "• "+text)
 			continue
 		}
-		
+
 		// Numbered lists
 		if len(trimmed) > 2 && trimmed[1] == '.' && trimmed[0] >= '0' && trimmed[0] <= '9' {
 			result = append(result, line)
 			continue
 		}
-		
+
 		// Regular text
 		result = append(result, line)
 	}
-	
+
 	return strings.Join(result, "\n")
 }
 

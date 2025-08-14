@@ -281,36 +281,35 @@ Features:
 		ml.Initialize(codeforgeApp.Config) // Ignore errors - ML is for model context only
 
 		// Auto-analyze existing projects (new projects handled by model tool)
-		// Skip in TUI mode to avoid delays
-		if !tuiMode {
+		// Show a spinner/progress during analysis. Skip only when reading from stdin (piped input).
+		if !hasStdinInput() {
 			autoGenerateProjectOverview()
 		}
 
 		return nil
 	},
-	Run: func(cmd *cobra.Command, args []string) {
-		// Check if TUI mode is requested
-		if tuiMode {
-			fmt.Println("Starting TUI mode...")
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Default to TUI when no args and no piped input
+		startTUI := tuiMode || (len(args) == 0 && !hasStdinInput())
+		if startTUI {
 			if err := tui.Run(codeforgeApp); err != nil {
-				fmt.Printf("Error running TUI: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("error running TUI: %w", err)
 			}
-			return
+			return nil
 		}
-		
+
 		// Handle different input modes like Gemini CLI
 		if len(args) > 0 {
 			// Direct prompt mode: codeforge "question"
 			prompt := strings.Join(args, " ")
-			handleDirectPrompt(prompt)
+			return handleDirectPrompt(prompt)
 		} else {
 			// Check for piped input
 			if hasStdinInput() {
-				handlePipedInput()
+				return handlePipedInput()
 			} else {
 				// Interactive mode (default)
-				startInteractiveMode()
+				return startInteractiveMode()
 			}
 		}
 	},
@@ -344,24 +343,24 @@ func Execute() {
 	}()
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 // handleDirectPrompt processes a direct prompt with integrated CodeForge app
-func handleDirectPrompt(prompt string) {
+func handleDirectPrompt(prompt string) error {
 	// Use integrated app if available
 	if codeforgeApp != nil {
 		ctx := context.Background()
 		response, err := codeforgeApp.ProcessChatMessage(ctx, "cli-session", prompt, model)
 		if err != nil {
 			if quiet {
-				fmt.Printf("Error: %v\n", err)
+				fmt.Fprintln(os.Stderr, "Error:", err)
 			} else {
-				fmt.Printf("Error processing message: %v\n", err)
+				fmt.Fprintln(os.Stderr, "Error processing message:", err)
 			}
-			return
+			return err
 		}
 
 		if quiet {
@@ -369,7 +368,7 @@ func handleDirectPrompt(prompt string) {
 		} else {
 			fmt.Printf("%s\n", response)
 		}
-		return
+		return nil
 	}
 
 	// Fallback to original LLM integration
@@ -383,55 +382,55 @@ func handleDirectPrompt(prompt string) {
 	apiKey := chat.GetAPIKeyForModel(selectedModel)
 	if apiKey == "" {
 		if quiet {
-			fmt.Println("Error: No API key found. Set one of the supported provider API keys.")
+			fmt.Fprintln(os.Stderr, "Error: No API key found. Set one of the supported provider API keys.")
 		} else {
-			fmt.Println("Error: No API key found")
-			fmt.Println("Please set one of these environment variables:")
-			fmt.Println("")
-			fmt.Println("🌐 Multi-Provider Platforms:")
-			fmt.Println("  - OPENROUTER_API_KEY (300+ models from 50+ providers)")
-			fmt.Println("")
-			fmt.Println("🏢 Direct Provider Keys:")
-			fmt.Println("  - ANTHROPIC_API_KEY (Claude models)")
-			fmt.Println("  - OPENAI_API_KEY (GPT models)")
-			fmt.Println("  - GEMINI_API_KEY (Gemini models)")
-			fmt.Println("  - GROQ_API_KEY (ultra-fast inference)")
-			fmt.Println("")
-			fmt.Println("⚡ Additional Providers:")
-			fmt.Println("  - TOGETHER_API_KEY (Together AI)")
-			fmt.Println("  - FIREWORKS_API_KEY (Fireworks AI)")
-			fmt.Println("  - DEEPSEEK_API_KEY (DeepSeek)")
-			fmt.Println("  - COHERE_API_KEY (Cohere)")
-			fmt.Println("  - MISTRAL_API_KEY (Mistral AI)")
-			fmt.Println("  - PERPLEXITY_API_KEY (Perplexity)")
-			fmt.Println("  - CEREBRAS_API_KEY (Cerebras)")
-			fmt.Println("  - SAMBANOVA_API_KEY (SambaNova)")
-			fmt.Println("")
-			fmt.Println("Tip: OPENROUTER_API_KEY gives you access to the most models!")
+			fmt.Fprintln(os.Stderr, "Error: No API key found")
+			fmt.Fprintln(os.Stderr, "Please set one of these environment variables:")
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "🌐 Multi-Provider Platforms:")
+			fmt.Fprintln(os.Stderr, "  - OPENROUTER_API_KEY (300+ models from 50+ providers)")
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "🏢 Direct Provider Keys:")
+			fmt.Fprintln(os.Stderr, "  - ANTHROPIC_API_KEY (Claude models)")
+			fmt.Fprintln(os.Stderr, "  - OPENAI_API_KEY (GPT models)")
+			fmt.Fprintln(os.Stderr, "  - GEMINI_API_KEY (Gemini models)")
+			fmt.Fprintln(os.Stderr, "  - GROQ_API_KEY (ultra-fast inference)")
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "⚡ Additional Providers:")
+			fmt.Fprintln(os.Stderr, "  - TOGETHER_API_KEY (Together AI)")
+			fmt.Fprintln(os.Stderr, "  - FIREWORKS_API_KEY (Fireworks AI)")
+			fmt.Fprintln(os.Stderr, "  - DEEPSEEK_API_KEY (DeepSeek)")
+			fmt.Fprintln(os.Stderr, "  - COHERE_API_KEY (Cohere)")
+			fmt.Fprintln(os.Stderr, "  - MISTRAL_API_KEY (Mistral AI)")
+			fmt.Fprintln(os.Stderr, "  - PERPLEXITY_API_KEY (Perplexity)")
+			fmt.Fprintln(os.Stderr, "  - CEREBRAS_API_KEY (Cerebras)")
+			fmt.Fprintln(os.Stderr, "  - SAMBANOVA_API_KEY (SambaNova)")
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "Tip: OPENROUTER_API_KEY gives you access to the most models!")
 		}
-		os.Exit(1)
+		return fmt.Errorf("no API key found")
 	}
 
 	// Create chat session
 	session, err := chat.NewChatSession(selectedModel, apiKey, provider, quiet, format)
 	if err != nil {
 		if quiet {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Error:", err)
 		} else {
-			fmt.Printf("Error creating chat session: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Error creating chat session:", err)
 		}
-		os.Exit(1)
+		return err
 	}
 
 	// Process the message
 	response, err := session.ProcessMessage(prompt)
 	if err != nil {
 		if quiet {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Error:", err)
 		} else {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Error:", err)
 		}
-		os.Exit(1)
+		return err
 	}
 
 	// In quiet mode, response is already printed during streaming
@@ -440,6 +439,7 @@ func handleDirectPrompt(prompt string) {
 		// Response was not streamed, so print it now
 		fmt.Println(response)
 	}
+	return nil
 }
 
 func hasStdinInput() bool {
@@ -453,7 +453,7 @@ func hasStdinInput() bool {
 	return (stat.Mode() & os.ModeCharDevice) == 0
 }
 
-func handlePipedInput() {
+func handlePipedInput() error {
 	fmt.Println("Reading from stdin...")
 
 	// Read all input from stdin
@@ -465,23 +465,23 @@ func handlePipedInput() {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading stdin: %v\n", err)
-		return
+		fmt.Fprintln(os.Stderr, "Error reading stdin:", err)
+		return err
 	}
 
 	if len(lines) == 0 {
-		fmt.Println("No input received from stdin")
-		return
+		fmt.Fprintln(os.Stderr, "No input received from stdin")
+		return fmt.Errorf("no input received from stdin")
 	}
 
 	// Join all lines into a single prompt
 	prompt := strings.Join(lines, "\n")
 
 	// Handle as direct prompt
-	handleDirectPrompt(prompt)
+	return handleDirectPrompt(prompt)
 }
 
-func startInteractiveMode() {
+func startInteractiveMode() error {
 	// Determine model to use
 	selectedModel := model
 	if selectedModel == "" {
@@ -491,39 +491,40 @@ func startInteractiveMode() {
 	// Get API key for the model
 	apiKey := chat.GetAPIKeyForModel(selectedModel)
 	if apiKey == "" {
-		fmt.Println("Error: No API key found")
-		fmt.Println("Please set one of these environment variables:")
-		fmt.Println("")
-		fmt.Println("🌐 Multi-Provider Platforms:")
-		fmt.Println("  - OPENROUTER_API_KEY (300+ models from 50+ providers)")
-		fmt.Println("")
-		fmt.Println("🏢 Direct Provider Keys:")
-		fmt.Println("  - ANTHROPIC_API_KEY (Claude models)")
-		fmt.Println("  - OPENAI_API_KEY (GPT models)")
-		fmt.Println("  - GEMINI_API_KEY (Gemini models)")
-		fmt.Println("  - GROQ_API_KEY (ultra-fast inference)")
-		fmt.Println("")
-		fmt.Println("⚡ Additional Providers:")
-		fmt.Println("  - TOGETHER_API_KEY, FIREWORKS_API_KEY, DEEPSEEK_API_KEY")
-		fmt.Println("  - COHERE_API_KEY, MISTRAL_API_KEY, PERPLEXITY_API_KEY")
-		fmt.Println("  - CEREBRAS_API_KEY, SAMBANOVA_API_KEY")
-		fmt.Println("")
-		fmt.Println("Tip: OPENROUTER_API_KEY gives you access to the most models!")
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, "Error: No API key found")
+		fmt.Fprintln(os.Stderr, "Please set one of these environment variables:")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "🌐 Multi-Provider Platforms:")
+		fmt.Fprintln(os.Stderr, "  - OPENROUTER_API_KEY (300+ models from 50+ providers)")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "🏢 Direct Provider Keys:")
+		fmt.Fprintln(os.Stderr, "  - ANTHROPIC_API_KEY (Claude models)")
+		fmt.Fprintln(os.Stderr, "  - OPENAI_API_KEY (GPT models)")
+		fmt.Fprintln(os.Stderr, "  - GEMINI_API_KEY (Gemini models)")
+		fmt.Fprintln(os.Stderr, "  - GROQ_API_KEY (ultra-fast inference)")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "⚡ Additional Providers:")
+		fmt.Fprintln(os.Stderr, "  - TOGETHER_API_KEY, FIREWORKS_API_KEY, DEEPSEEK_API_KEY")
+		fmt.Fprintln(os.Stderr, "  - COHERE_API_KEY, MISTRAL_API_KEY, PERPLEXITY_API_KEY")
+		fmt.Fprintln(os.Stderr, "  - CEREBRAS_API_KEY, SAMBANOVA_API_KEY")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Tip: OPENROUTER_API_KEY gives you access to the most models!")
+		return fmt.Errorf("no API key found")
 	}
 
 	// Create chat session
 	session, err := chat.NewChatSession(selectedModel, apiKey, provider, quiet, format)
 	if err != nil {
-		fmt.Printf("Error creating chat session: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, "Error creating chat session:", err)
+		return err
 	}
 
 	// Start interactive chat
 	if err := session.StartInteractive(); err != nil {
-		fmt.Printf("Error in interactive mode: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, "Error in interactive mode:", err)
+		return err
 	}
+	return nil
 }
 
 // init sets up signal handling for graceful shutdown

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -24,18 +23,17 @@ var mcpListServersCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all MCP servers",
 	Long:  "List all configured MCP servers with their status",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := getMCPManager()
 
 		statuses, err := manager.ListServerStatuses()
 		if err != nil {
-			fmt.Printf("Error listing MCP servers: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error listing MCP servers: %w", err)
 		}
 
 		if len(statuses) == 0 {
 			fmt.Println("No MCP servers configured")
-			return
+			return nil
 		}
 
 		fmt.Printf("%-20s %-10s %-10s %-15s %-10s %s\n", "NAME", "TYPE", "ENABLED", "CONNECTED", "TOOLS", "DESCRIPTION")
@@ -61,6 +59,7 @@ var mcpListServersCmd = &cobra.Command{
 				status.Description,
 			)
 		}
+		return nil
 	},
 }
 
@@ -69,7 +68,7 @@ var mcpAddCmd = &cobra.Command{
 	Short: "Add a new MCP server",
 	Long:  "Add a new MCP server configuration",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
 		serverType, _ := cmd.Flags().GetString("type")
@@ -79,8 +78,7 @@ var mcpAddCmd = &cobra.Command{
 		enabled, _ := cmd.Flags().GetBool("enabled")
 
 		if serverType == "" {
-			fmt.Println("Error: --type is required")
-			os.Exit(1)
+			return fmt.Errorf("--type is required")
 		}
 
 		config := &mcp.MCPServerConfig{
@@ -96,28 +94,25 @@ var mcpAddCmd = &cobra.Command{
 		switch config.Type {
 		case mcp.MCPServerTypeLocal:
 			if len(command) == 0 {
-				fmt.Println("Error: --command is required for local servers")
-				os.Exit(1)
+				return fmt.Errorf("--command is required for local servers")
 			}
 			config.Command = command
 		case mcp.MCPServerTypeRemote, mcp.MCPServerTypeSSE, mcp.MCPServerTypeHTTP:
 			if url == "" {
-				fmt.Println("Error: --url is required for remote servers")
-				os.Exit(1)
+				return fmt.Errorf("--url is required for remote servers")
 			}
 			config.URL = url
 		default:
-			fmt.Printf("Error: unsupported server type: %s\n", serverType)
-			os.Exit(1)
+			return fmt.Errorf("unsupported server type: %s", serverType)
 		}
 
 		manager := getMCPManager()
 		if err := manager.AddServer(config); err != nil {
-			fmt.Printf("Error adding MCP server: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error adding MCP server: %w", err)
 		}
 
 		fmt.Printf("MCP server '%s' added successfully\n", name)
+		return nil
 	},
 }
 
@@ -126,16 +121,16 @@ var mcpRemoveCmd = &cobra.Command{
 	Short: "Remove an MCP server",
 	Long:  "Remove an MCP server configuration",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
 		manager := getMCPManager()
 		if err := manager.RemoveServer(name); err != nil {
-			fmt.Printf("Error removing MCP server: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error removing MCP server: %w", err)
 		}
 
 		fmt.Printf("MCP server '%s' removed successfully\n", name)
+		return nil
 	},
 }
 
@@ -144,16 +139,16 @@ var mcpEnableCmd = &cobra.Command{
 	Short: "Enable an MCP server",
 	Long:  "Enable an MCP server and start it",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
 		manager := getMCPManager()
 		if err := manager.EnableServer(name); err != nil {
-			fmt.Printf("Error enabling MCP server: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error enabling MCP server: %w", err)
 		}
 
 		fmt.Printf("MCP server '%s' enabled successfully\n", name)
+		return nil
 	},
 }
 
@@ -162,16 +157,16 @@ var mcpDisableCmd = &cobra.Command{
 	Short: "Disable an MCP server",
 	Long:  "Disable an MCP server and stop it",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
 		manager := getMCPManager()
 		if err := manager.DisableServer(name); err != nil {
-			fmt.Printf("Error disabling MCP server: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error disabling MCP server: %w", err)
 		}
 
 		fmt.Printf("MCP server '%s' disabled successfully\n", name)
+		return nil
 	},
 }
 
@@ -180,14 +175,13 @@ var mcpStatusCmd = &cobra.Command{
 	Short: "Show MCP server status",
 	Long:  "Show detailed status of an MCP server",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
 		manager := getMCPManager()
 		status, err := manager.GetServerStatus(name)
 		if err != nil {
-			fmt.Printf("Error getting MCP server status: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error getting MCP server status: %w", err)
 		}
 
 		fmt.Printf("MCP Server: %s\n", status.Name)
@@ -201,6 +195,7 @@ var mcpStatusCmd = &cobra.Command{
 		fmt.Printf("Tools: %d\n", status.ToolCount)
 		fmt.Printf("Resources: %d\n", status.ResourceCount)
 		fmt.Printf("Prompts: %d\n", status.PromptCount)
+		return nil
 	},
 }
 
@@ -208,19 +203,18 @@ var mcpDiscoverCmd = &cobra.Command{
 	Use:   "discover",
 	Short: "Discover available MCP servers",
 	Long:  "Discover available MCP servers from the official repository",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := getMCPManager()
 
 		fmt.Println("Discovering MCP servers from repository...")
 		servers, err := manager.DiscoverServers()
 		if err != nil {
-			fmt.Printf("Error discovering MCP servers: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error discovering MCP servers: %w", err)
 		}
 
 		if len(servers) == 0 {
 			fmt.Println("No MCP servers found in repository")
-			return
+			return nil
 		}
 
 		fmt.Printf("Found %d MCP servers:\n\n", len(servers))
@@ -240,6 +234,7 @@ var mcpDiscoverCmd = &cobra.Command{
 			}
 			fmt.Println()
 		}
+		return nil
 	},
 }
 
@@ -247,13 +242,13 @@ var mcpHealthCmd = &cobra.Command{
 	Use:   "health",
 	Short: "Check MCP server health",
 	Long:  "Check the health status of all MCP servers",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := getMCPManager()
 
 		health := manager.HealthCheck()
 		if len(health) == 0 {
 			fmt.Println("No MCP servers configured")
-			return
+			return nil
 		}
 
 		fmt.Printf("%-20s %s\n", "SERVER", "STATUS")
@@ -266,6 +261,7 @@ var mcpHealthCmd = &cobra.Command{
 			}
 			fmt.Printf("%-20s %s\n", name, status)
 		}
+		return nil
 	},
 }
 

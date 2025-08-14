@@ -10,25 +10,25 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/entrepeneur4lyf/codeforge/internal/app"
-    chatfav "github.com/entrepeneur4lyf/codeforge/internal/chat"
+	chatfav "github.com/entrepeneur4lyf/codeforge/internal/chat"
 	"github.com/entrepeneur4lyf/codeforge/internal/models"
 	"github.com/entrepeneur4lyf/codeforge/internal/tui/theme"
 )
 
 // AdvancedModelDialog provides intelligent model selection with recommendations
 type AdvancedModelDialog struct {
-	app             *app.App
-	theme           theme.Theme
-	models          []*models.CanonicalModel
-	filteredModels  []*models.CanonicalModel
-	currentModel    int
-	width           int
-	height          int
-	viewMode        ViewMode
-	filterCriteria  models.ModelSelectionCriteria
-	recommendations []models.ModelRecommendation
-    showingFavorites bool
-    favoritesMgr     *chatfav.Favorites
+	app              *app.App
+	theme            theme.Theme
+	models           []*models.CanonicalModel
+	filteredModels   []*models.CanonicalModel
+	currentModel     int
+	width            int
+	height           int
+	viewMode         ViewMode
+	filterCriteria   models.ModelSelectionCriteria
+	recommendations  []models.ModelRecommendation
+	showingFavorites bool
+	favoritesMgr     *chatfav.Favorites
 }
 
 // ViewMode defines different viewing modes
@@ -68,17 +68,17 @@ func NewAdvancedModelDialog(app *app.App, theme theme.Theme) *AdvancedModelDialo
 
 func (m *AdvancedModelDialog) Init() tea.Cmd {
 	// Load models and get recommendations
-    // Initialize favorites manager for persistence
-    if fav, err := chatfav.NewFavorites(); err == nil {
-        m.favoritesMgr = fav
-        // Hydrate app favorites from persisted ids if possible
-        if m.app != nil {
-            for _, id := range fav.GetFavoriteModels() {
-                // Try to map string to canonical ID
-                m.app.AddFavoriteModel(models.CanonicalModelID(id))
-            }
-        }
-    }
+	// Initialize favorites manager for persistence
+	if fav, err := chatfav.NewFavorites(); err == nil {
+		m.favoritesMgr = fav
+		// Hydrate app favorites from persisted ids if possible
+		if m.app != nil {
+			for _, id := range fav.GetFavoriteModels() {
+				// Try to map string to canonical ID
+				m.app.AddFavoriteModel(models.CanonicalModelID(id))
+			}
+		}
+	}
 	m.loadModels()
 	return m.getRecommendations()
 }
@@ -94,15 +94,15 @@ func (m *AdvancedModelDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, advancedKeys.Cancel):
 			return m, func() tea.Msg { return DialogCloseMsg{} }
 
-        case key.Matches(msg, advancedKeys.Select):
-            if model := m.getCurrentModel(); model != nil {
-                provider := m.getBestProvider(model)
-                selProvider := string(provider)
-                selModel := string(model.ID)
-                return m, func() tea.Msg {
-                    return ModelSelectedMsg{Provider: selProvider, Model: selModel}
-                }
-            }
+		case key.Matches(msg, advancedKeys.Select):
+			if model := m.getCurrentModel(); model != nil {
+				provider := m.getBestProvider(model)
+				selProvider := string(provider)
+				selModel := string(model.ID)
+				return m, func() tea.Msg {
+					return ModelSelectedMsg{Provider: selProvider, Model: selModel}
+				}
+			}
 
 		case key.Matches(msg, advancedKeys.NextModel):
 			m.nextModel()
@@ -126,8 +126,6 @@ func (m *AdvancedModelDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applyCurrentView()
 			return m, m.getRecommendations()
 
-		case key.Matches(msg, advancedKeys.FilterByTask):
-			return m, m.showTaskSelector()
 		}
 	}
 
@@ -431,7 +429,6 @@ func (m *AdvancedModelDialog) renderAdvancedHelp() string {
 		"v: view mode",
 		"r: recommended",
 		"f: favorites",
-		"t: filter by task",
 		"esc: cancel",
 	}
 	return strings.Join(helps, " • ")
@@ -471,14 +468,14 @@ func (m *AdvancedModelDialog) toggleFavorite() tea.Cmd {
 
 			if isFavorite {
 				m.app.RemoveFavoriteModel(model.ID)
-                if m.favoritesMgr != nil {
-                    _ = m.favoritesMgr.RemoveModelFavorite(string(model.ID))
-                }
+				if m.favoritesMgr != nil {
+					_ = m.favoritesMgr.RemoveModelFavorite(string(model.ID))
+				}
 			} else {
 				m.app.AddFavoriteModel(model.ID)
-                if m.favoritesMgr != nil {
-                    _ = m.favoritesMgr.AddModelFavorite(string(model.ID))
-                }
+				if m.favoritesMgr != nil {
+					_ = m.favoritesMgr.AddModelFavorite(string(model.ID))
+				}
 			}
 		}
 		return nil
@@ -486,20 +483,20 @@ func (m *AdvancedModelDialog) toggleFavorite() tea.Cmd {
 }
 
 func (m *AdvancedModelDialog) showTaskSelector() tea.Cmd {
-    // Cycle through common task types for simplicity
-    cycle := []string{"code", "chat", "analysis", "creative", "reasoning", "vision"}
-    current := m.filterCriteria.TaskType
-    idx := 0
-    for i, v := range cycle {
-        if v == current {
-            idx = i
-            break
-        }
-    }
-    next := cycle[(idx+1)%len(cycle)]
-    m.filterCriteria.TaskType = next
-    m.applyCurrentView()
-    return m.getRecommendations()
+	// Cycle through common task types for simplicity
+	cycle := []string{"code", "chat", "analysis", "creative", "reasoning", "vision"}
+	current := m.filterCriteria.TaskType
+	idx := 0
+	for i, v := range cycle {
+		if v == current {
+			idx = i
+			break
+		}
+	}
+	next := cycle[(idx+1)%len(cycle)]
+	m.filterCriteria.TaskType = next
+	m.applyCurrentView()
+	return m.getRecommendations()
 }
 
 // Helper methods
@@ -529,7 +526,7 @@ func (m *AdvancedModelDialog) switchViewMode() {
 func (m *AdvancedModelDialog) getBestProvider(model *models.CanonicalModel) models.ProviderID {
 	// Get user preferences
 	prefs := m.app.GetModelPreferences()
-	
+
 	// Check user's preferred providers first
 	for _, prefProvider := range prefs.PreferredProviders {
 		if _, exists := model.Providers[prefProvider]; exists {
